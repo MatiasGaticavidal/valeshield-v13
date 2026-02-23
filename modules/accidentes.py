@@ -6,16 +6,23 @@ from datetime import datetime
 from utils import ARCHIVO_ACCIDENTES, ARCHIVO_PERSONAL, limpiar_rut, guardar_fila_nube, obtener_datos_nube
 
 def cargar_datos_personal_completo():
-    """Descarga la nómina desde la nube y prepara el diccionario de búsqueda"""
-    # 1. Llamamos a la función que ya existe en utils
+    """Descarga la nómina y elimina duplicados automáticamente"""
     df = obtener_datos_nube("personal") 
     
     if not df.empty:
-        # 2. Estandarizamos encabezados
+        # 1. Estandarizamos encabezados
         df.columns = [c.strip().upper() for c in df.columns]
+        
         if 'RUT' in df.columns:
-            # 3. Creamos el diccionario con Nombre y Sucursal
-            return df.set_index(df['RUT'].apply(limpiar_rut))[['NOMBRE', 'SUCURSAL']].to_dict('index')
+            # 2. Limpiamos los RUTs primero
+            df['RUT'] = df['RUT'].apply(limpiar_rut)
+            
+            # 3. ELIMINAR DUPLICADOS: Si un RUT está dos veces, dejamos solo la primera fila
+            df = df.drop_duplicates(subset=['RUT'], keep='first')
+            
+            # 4. Ahora sí, creamos el diccionario de búsqueda
+            return df.set_index('RUT')[['NOMBRE', 'SUCURSAL']].to_dict('index')
+            
     return {}
 
 def mostrar_modulo_accidentes(rol):
@@ -128,3 +135,4 @@ def mostrar_modulo_accidentes(rol):
         df_historial = obtener_datos_nube("Accidentes")
         if not df_historial.empty:
             st.dataframe(df_historial, use_container_width=True, hide_index=True)
+
