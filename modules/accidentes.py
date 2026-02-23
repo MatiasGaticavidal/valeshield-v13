@@ -8,13 +8,14 @@ from utils import ARCHIVO_ACCIDENTES, ARCHIVO_PERSONAL, limpiar_rut, guardar_fil
 def cargar_datos_personal_completo():
     """Descarga la nómina desde la nube: RUT, Nombre y Sucursal"""
     # Usamos "personal" en minúsculas como está en tu pestaña de Google Sheets
-    df = obtener_datos_nube("personal")
-         try:
-             doc = conectar_google_sheets()
-             # ESTA LÍNEA ES PARA INVESTIGAR:
-             print(f"Pestañas encontradas: {[w.title for w in doc.worksheets()]}") 
+   def obtener_datos_nube("Personal"):
+    try:
+        doc = conectar_google_sheets()
+        # ESTA LÍNEA ES PARA INVESTIGAR:
+        print(f"Pestañas encontradas: {[w.title for w in doc.worksheets()]}") 
         
-        hoja = doc.worksheet(nombre_pestana)
+        hoja = doc.worksheet("Personal")
+        # ... resto del código
     if not df.empty:
         # Estandarizamos encabezados a Mayúsculas para evitar errores de lectura
         df.columns = [c.strip().upper() for c in df.columns]
@@ -144,4 +145,5 @@ def mostrar_modulo_accidentes(rol):
             st.dataframe(df_historial, use_container_width=True, hide_index=True)
         else:
             st.info("No hay accidentes registrados aún en la pestaña 'Accidentes'.")
+
 
