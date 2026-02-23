@@ -7,3 +7,4 @@ pandas
 gspread
 google-auth
 fpdf
+streamlit-antd-components
