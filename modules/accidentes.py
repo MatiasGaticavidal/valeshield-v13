@@ -8,13 +8,23 @@ from utils import ARCHIVO_ACCIDENTES, ARCHIVO_PERSONAL, limpiar_rut, guardar_fil
 def cargar_datos_personal_completo():
     """Descarga la nómina desde la nube: RUT, Nombre y Sucursal"""
     # Usamos "personal" en minúsculas como está en tu pestaña de Google Sheets
-   def obtener_datos_nube("Personal"):
+  def obtener_datos_nube(nombre_pestana):
+    """Lee datos desde Google Sheets y los devuelve como DataFrame"""
     try:
         doc = conectar_google_sheets()
-        # ESTA LÍNEA ES PARA INVESTIGAR:
-        print(f"Pestañas encontradas: {[w.title for w in doc.worksheets()]}") 
         
-        hoja = doc.worksheet("Personal")
+        # Esto te mostrará en la consola de Streamlit qué nombres ve Google
+        titulos = [w.title for w in doc.worksheets()]
+        print(f"Pestañas disponibles en Google: {titulos}") 
+        
+        # Intentamos abrir la pestaña
+        hoja = doc.worksheet(nombre_pestana)
+        datos = hoja.get_all_records()
+        return pd.DataFrame(datos)
+    except Exception as e:
+        # Si falla, nos dirá el nombre exacto que intentó buscar
+        st.error(f"Error al leer pestaña '{nombre_pestana}': {e}")
+        return pd.DataFrame()
         # ... resto del código
     if not df.empty:
         # Estandarizamos encabezados a Mayúsculas para evitar errores de lectura
@@ -145,5 +155,6 @@ def mostrar_modulo_accidentes(rol):
             st.dataframe(df_historial, use_container_width=True, hide_index=True)
         else:
             st.info("No hay accidentes registrados aún en la pestaña 'Accidentes'.")
+
 
 
