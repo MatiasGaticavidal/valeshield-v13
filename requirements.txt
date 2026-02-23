@@ -7,4 +7,5 @@ pandas
 gspread
 google-auth
 fpdf
+openpyxl
 streamlit-antd-components
