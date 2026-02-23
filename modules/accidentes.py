@@ -2,79 +2,59 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-# Importación de funciones maestras desde tu archivo utils.py
+# Importamos las funciones desde utils.py
 from utils import ARCHIVO_ACCIDENTES, ARCHIVO_PERSONAL, limpiar_rut, guardar_fila_nube, obtener_datos_nube
 
 def cargar_datos_personal_completo():
-    """Descarga la nómina desde la nube: RUT, Nombre y Sucursal"""
-    # Usamos "personal" en minúsculas como está en tu pestaña de Google Sheets
-  def obtener_datos_nube(nombre_pestana):
-    """Lee datos desde Google Sheets y los devuelve como DataFrame"""
-    try:
-        doc = conectar_google_sheets()
-        
-        # Esto te mostrará en la consola de Streamlit qué nombres ve Google
-        titulos = [w.title for w in doc.worksheets()]
-        print(f"Pestañas disponibles en Google: {titulos}") 
-        
-        # Intentamos abrir la pestaña
-        hoja = doc.worksheet(nombre_pestana)
-        datos = hoja.get_all_records()
-        return pd.DataFrame(datos)
-    except Exception as e:
-        # Si falla, nos dirá el nombre exacto que intentó buscar
-        st.error(f"Error al leer pestaña '{nombre_pestana}': {e}")
-        return pd.DataFrame()
-        # ... resto del código
+    """Descarga la nómina desde la nube y prepara el diccionario de búsqueda"""
+    # 1. Llamamos a la función que ya existe en utils
+    df = obtener_datos_nube("personal") 
+    
     if not df.empty:
-        # Estandarizamos encabezados a Mayúsculas para evitar errores de lectura
+        # 2. Estandarizamos encabezados
         df.columns = [c.strip().upper() for c in df.columns]
         if 'RUT' in df.columns:
-            # Creamos diccionario indexado por RUT para búsqueda instantánea
+            # 3. Creamos el diccionario con Nombre y Sucursal
             return df.set_index(df['RUT'].apply(limpiar_rut))[['NOMBRE', 'SUCURSAL']].to_dict('index')
     return {}
 
 def mostrar_modulo_accidentes(rol):
-    st.markdown("## 🏥 Registro y Control de Accidentes (v14.0 Cloud)")
+    st.markdown("## 🏥 Registro y Control de Accidentes (v14.0 Cloud Sync)")
     
-    # 1. Cargar base de datos completa de trabajadores
+    # Cargar base de datos para autocompletado
     dict_personal = cargar_datos_personal_completo()
     
-    # Lista oficial de sucursales (Exactamente como las dejaste en el Sheets)
+    # Sucursales oficiales de ELECTROCOM
     opciones_sucursal = ["ELECTROCOM", "MCT", "PLACA CENTRO", "TERRENO/EXTERNO"]
 
-    # --- BLOQUE DE IDENTIFICACIÓN (Fuera del form para reactividad inmediata) ---
+    # --- BÚSQUEDA REACTIVA (Fuera del Form) ---
     st.markdown("### 🔍 Identificación del Trabajador")
-    rut_busqueda = st.text_input("Ingrese RUT del Trabajador (Ej: 12345678-9)", placeholder="Escriba aquí para auto-completar...")
+    rut_busqueda = st.text_input("Ingrese RUT del Trabajador (Ej: 12345678-9)")
     
     nombre_sugerido = ""
     indice_sucursal = 0 # Por defecto apunta a ELECTROCOM
 
     if rut_busqueda:
         rut_limpio = limpiar_rut(rut_busqueda)
-        info_trabajador = dict_personal.get(rut_limpio)
+        info = dict_personal.get(rut_limpio)
         
-        if info_trabajador:
-            nombre_sugerido = info_trabajador.get('NOMBRE', "")
-            # Limpiamos el texto de la sucursal que viene del Sheets
-            suc_base = str(info_trabajador.get('SUCURSAL', "")).strip().upper()
+        if info:
+            nombre_sugerido = info.get('NOMBRE', "")
+            suc_base = str(info.get('SUCURSAL', "")).strip().upper()
             
-            # Lógica de salto automático de sucursal
+            # Saltamos automáticamente a la sucursal correcta
             if suc_base in opciones_sucursal:
                 indice_sucursal = opciones_sucursal.index(suc_base)
-            elif "ECOM" in suc_base: # Por si acaso dice ELECTROCOM VALDIVIA o ECOM
-                indice_sucursal = 0
-            elif "MCT" in suc_base:
-                indice_sucursal = 1
-            elif "PLACA" in suc_base:
-                indice_sucursal = 2
+            elif "ECOM" in suc_base: indice_sucursal = 0
+            elif "MCT" in suc_base: indice_sucursal = 1
+            elif "PLACA" in suc_base: indice_sucursal = 2
                 
-            st.success(f"✅ **{nombre_sugerido}** detectado en base de datos (**{suc_base}**)")
+            st.success(f"✅ Detectado: **{nombre_sugerido}** de sucursal **{suc_base}**")
         else:
-            st.warning("⚠️ RUT no encontrado. Si es un trabajador nuevo, regístralo primero en la pestaña 'personal' del Sheets.")
+            st.warning("⚠️ RUT no encontrado en la base de datos cloud.")
 
     # --- PESTAÑAS DE TRABAJO ---
-    tab1, tab2 = st.tabs(["📝 Formulario de Registro", "📂 Historial en la Nube"])
+    tab1, tab2 = st.tabs(["📝 Registrar Nuevo Accidente", "📂 Historial en la Nube"])
 
     with tab1:
         with st.form("form_accidente_v14_final", clear_on_submit=True):
@@ -82,18 +62,17 @@ def mostrar_modulo_accidentes(rol):
             col_f, col_h, col_s = st.columns(3)
             fecha = col_f.date_input("Fecha del Accidente")
             hora = col_h.time_input("Hora del Accidente")
-            # El index=indice_sucursal es lo que hace que el selector cambie solo
+            # El index=indice_sucursal hace la magia
             sucursal_evento = col_s.selectbox("Sucursal del Siniestro", opciones_sucursal, index=indice_sucursal)
             
             st.markdown("### 2. Información del Accidentado")
-            # El nombre se auto-rellena con lo encontrado arriba
-            trabajador = st.text_input("Nombre Completo del Trabajador", value=nombre_sugerido)
+            trabajador = st.text_input("Nombre del Trabajador", value=nombre_sugerido)
             
             col_ant1, col_ant2 = st.columns(2)
             antiguedad_empresa = col_ant1.number_input("Antigüedad en la empresa (meses)", min_value=0, step=1)
             antiguedad_cargo = col_ant2.number_input("Tiempo en el cargo actual (meses)", min_value=0, step=1)
 
-            st.markdown("### 3. Clasificación y Gravedad")
+            st.markdown("### 3. Clasificación y Daños")
             col_t, col_d = st.columns(2)
             tipo_accidente = col_t.selectbox("Tipo de Accidente", [
                 "Accidente CTP (Con Tiempo Perdido)", 
@@ -102,23 +81,22 @@ def mostrar_modulo_accidentes(rol):
                 "Incidente / Cuasi Accidente",
                 "Enfermedad Profesional"
             ])
-            dias_perdidos = col_d.number_input("Días Perdidos (Estimados)", min_value=0, step=1)
+            dias_perdidos = col_d.number_input("Días Perdidos Estimados", min_value=0, step=1)
             
             col_p, col_l = st.columns(2)
             parte_cuerpo = col_p.text_input("Parte del cuerpo lesionada")
-            tipo_lesion = col_l.text_input("Tipo de lesión (Fractura, esguince, etc.)")
+            tipo_lesion = col_l.text_input("Tipo de lesión")
             
             st.markdown("### 4. Relato y Acciones (Estructura v12.0)")
-            relato = st.text_area("Relato de lo ocurrido (Detalle completo)", help="Describe qué estaba haciendo y cómo ocurrió.")
-            acciones = st.text_area("Acciones inmediatas tomadas", help="Primeras medidas de control aplicadas.")
+            relato = st.text_area("Relato de lo ocurrido (Detalle completo)")
+            acciones = st.text_area("Acciones inmediatas tomadas")
             
-            submit = st.form_submit_button("💾 Guardar y Sincronizar Reporte", type="primary", use_container_width=True)
+            submit = st.form_submit_button("💾 Guardar y Sincronizar", type="primary", use_container_width=True)
 
             if submit:
                 if not trabajador or not relato or not rut_busqueda:
                     st.error("❌ Los campos RUT, Nombre y Relato son obligatorios.")
                 else:
-                    # Construcción del registro para Google Sheets
                     nuevo_registro = {
                         "Fecha": fecha.strftime("%Y-%m-%d"),
                         "Hora": hora.strftime("%H:%M"),
@@ -136,25 +114,17 @@ def mostrar_modulo_accidentes(rol):
                         "Estado": "Pendiente Investigación"
                     }
                     
-                    with st.spinner("Enviando reporte a la nube..."):
-                        # Se guarda en la pestaña 'Accidentes' de tu Google Sheets
+                    with st.spinner("Sincronizando..."):
                         exito = guardar_fila_nube(nuevo_registro, "Accidentes")
                     
                     if exito:
-                        st.success(f"✅ ¡Excelente Matías! Reporte de {trabajador} sincronizado con éxito.")
+                        st.success(f"✅ Reporte de {trabajador} guardado en Google Sheets.")
                         st.balloons()
                     else:
-                        st.error("❌ Error de sincronización. Verifica tu conexión o el archivo JSON.")
+                        st.error("❌ Error de conexión con la nube.")
 
     with tab2:
         st.markdown("### 📂 Base de Datos en Tiempo Real")
-        with st.spinner("Cargando registros históricos..."):
-            df_historial = obtener_datos_nube("Accidentes")
-        
+        df_historial = obtener_datos_nube("Accidentes")
         if not df_historial.empty:
             st.dataframe(df_historial, use_container_width=True, hide_index=True)
-        else:
-            st.info("No hay accidentes registrados aún en la pestaña 'Accidentes'.")
-
-
-
