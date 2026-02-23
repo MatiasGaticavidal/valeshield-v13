@@ -1,0 +1,47 @@
+RUT,Nombre,Cargo,Sucursal,Tipo_Examen,Vencimiento,Estado
+9803758-6,Alvarado Godoy Luis Alberto,Operario Bodega - Operador Grua Horquilla,Mct Valdivia,Grua Horquilla,NO APTO,NO APTO
+19817911-6,Becerra Vergara Cristhofer Alexander,Operario Bodega - Operador Grua Horquilla,Plc. Valdivia,Grua Horquilla,22-09-2026,APTO
+16257324-1,Llancaman Paillal Miguel Angel,Operario Bodega - Operador Grua Horquilla,Ecom. Valdivia,Grua Horquilla,03-05-2027,APTO
+18471386-1,Manosalva Ramos Francisco Javier,Operador Grua Horquilla - Oxicorte - Bodega,Mct Valdivia,Grua Horquilla,11-04-2027,APTO
+13160649-4,Marin Cadagan Jose Andres,Control Despacho - Operador Grua Horquilla,Plc. Valdivia,Grua Horquilla,28-01-2028,APTO
+12436005-6,Martinez Pacheco Iván Enrique,Operario Bodega - Operador Grua Horquilla,Plc. Valdivia,Grua Horquilla,13-03-2027,APTO
+18489917-5,Matus Oyarzun Gerson Ignacio,Operario Bodega - Operador Grua Horquilla,Mct Valdivia,Grua Horquilla,28-08-2027,APTO
+10532274-7,Ortiz Saavedra Humberto Hugo,Operario Bodega - Operador Grua Horquilla,Plc. Valdivia,Grua Horquilla,25-02-2026,APTO
+16806156-0,Sanchez Mora Carlos Adrian,Operario Bodega - Operador Grua Horquilla,Mct Valdivia,Grua Horquilla,07-03-2027,APTO
+17786729-2,Sanchez Pino Elvis Hans,Operador Grua Horquilla - Chofer,Mct Valdivia,Grua Horquilla,26-01-2029,APTO
+14178300-9,Silva Montenegro Rodrigo Andres,Jefe de Patio,Mct Valdivia,Grua Horquilla,17-04-2027,APTO
+10157634-5,Zapata Echeverria Juan Segundo,Operario Bodega - Operador Grua Horquilla,Mct Valdivia,Grua Horquilla,NO APTO,NO APTO
+20134457-3,Alvarado Lagos Hernan Daniel,Operador Grúa Horquilla,Mct Valdivia,Grua Horquilla,04-08-2028,APTO
+21561813-7,Carrasco Zuniga Gabriel Ivan,Operador Grúa Horquilla,Mct Valdivia,Grua Horquilla,11-09-2027,APTO
+20845116-2,Catalán Crisosto Marco Antonio,Operador Grúa Horquilla,Mct Valdivia,Grua Horquilla,05-08-2028,APTO
+13399651-6,Munoz Bravo Patricio Gustavo,Operador Grúa Horquilla,Mct Valdivia,Grua Horquilla,16-04-2027,APTO
+18590988-3,Navarro Carrion Joel Abraham,Operador Grúa Horquilla,Mct Valdivia,Grua Horquilla,05-01-2029,APTO
+19465198-8,Oyarzo Perez Teofilo Nicolas,Operador Grúa Horquilla,Mct Valdivia,Grua Horquilla,08-09-2028,APTO
+18959776-2,Cariman Sandoval Nicolas Nibaldo,Chofer,Ecom. Valdivia,Chofer,11-09-2027,APTO
+11425032-5,Caro Catalan Hugo Moises,Chofer,Mct Valdivia,Chofer,21-10-2026,APTO
+12390536-9,Del Rio Rosales Victor Hernan,Chofer,Mct Valdivia,Chofer,22-04-2027,APTO
+16057739-8,Fernandez Pacheco Jose Emilio,Chofer,Mct Valdivia,Chofer,15-05-2027,APTO
+16319531-3,Perez Perez Ariel Alejandro,Operario Bodega - Chofer,Mct Valdivia,Chofer,21-10-2028,APTO
+16929803-3,Poblete Gonzalez Armando Zabdiel,Chofer,Mct Valdivia,Chofer,16-01-2026,VENCIDO
+9084888-7,Provoste Cordones Juan Carlos,Operario Bodega - Chofer,Ecom. Valdivia,Chofer,27-01-2027,APTO
+17786729-2,Sanchez Pino Elvis Hans,Operador Grua Horquilla - Chofer,Mct Valdivia,Chofer,26-01-2029,APTO
+11804598-K,Sanhueza Ferrada Guido Salvador,Chofer,Ecom. Valdivia,Chofer,12-03-2026,APTO
+20990111-0,Barria Castro Axel Benjamín,Operador de Maquina Dimensionadora,Plc. Valdivia,Dimensionado,18-12-2028,APTO
+20176757-1,Castillo Zavala Sebastian Ignacio,Operario Bodega - Operador Dimensionadora,Plc. Valdivia,Dimensionado,26-02-2028,APTO
+11704176-K,Flores Pena Omar Exequiel,Control Dimensionado - Enchapadora,Plc. Valdivia,Dimensionado,27-01-2028,APTO
+18592336-3,Muñoz Jaramillo Cristian Edgardo,Operario Bodega - Operador Dimensionadora,Plc. Valdivia,Dimensionado,17-12-2028,APTO
+16464619-K,Navarro Rapiman Luis Humberto,Operador Dimensionadora,Plc. Valdivia,Dimensionado,29-05-2027,APTO
+18166231-K,Pino Díaz Jorge Andrés,Operador Dimensionadora - Enchapadora,Plc. Valdivia,Dimensionado,27-02-2028,APTO
+18522452-K,Reyes Castillo Byron Gamaliel,Operador de Maquina Dimensionadora,Plc. Valdivia,Dimensionado,29-07-2027,APTO
+11704176-K,Flores Pena Omar Exequiel,Control Dimensionado - Enchapadora,Plc. Valdivia,Enchapado,27-01-2028,APTO
+16049670-3,Garrido Salinas Jonathan Eduardo,Operador de Maquina Enchapadora,Plc. Valdivia,Enchapado,18-02-2028,APTO
+11704825-K,Miranda Valdivia Ernesto Antonio,Operador de Maquina Enchapadora,Plc. Valdivia,Enchapado,23-01-2028,APTO
+18166231-K,Pino Díaz Jorge Andrés,Operador Dimensionadora - Enchapadora,Plc. Valdivia,Enchapado,27-02-2028,APTO
+15293664-8,Ramos Madrid Víctor Alfredo,Operador de Maquina Enchapadora,Plc. Valdivia,Enchapado,12-03-2027,APTO
+13445783-K,Gierke Heredia Cristian Horacio,Operario Bodega,Mct Valdivia,Trabajo en Altura,06-10-2027,APTO
+16806156-0,Sanchez Mora Carlos Adrian,Operario Bodega - Operador Grua Horquilla,Mct Valdivia,Trabajo en Altura,07-10-2028,APTO
+19465198-8,Oyarzo Perez Teofilo Nicolas,Operador Grúa Horquilla,Mct Valdivia,Trabajo en Altura,09-10-2028,APTO
+15884469-9,Guerrero Guerrero Fabian Marcelo,Operario Bodega,Mct Valdivia,Trabajo en Altura,06-10-2027,APTO
+13319041-4,Jara Zambrano Rigoberto Magdiel,Operario Bodega,Mct Valdivia,Trabajo en Altura,29-08-2027,APTO
+19250135-0,Inostroza Marchant David Eduardo,Operario Bodega,Mct Valdivia,Trabajo en Altura,07-10-2028,APTO
+13399651-6,Munoz Bravo Patricio Gustavo,Operador Grúa Horquilla,Mct Valdivia,Trabajo en Altura,08-10-2027,APTO

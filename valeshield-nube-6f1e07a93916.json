@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "valeshield-nube",
+  "private_key_id": "6f1e07a93916129d71fee14ac9ed5af48947dd8b",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCcorsxBjImv6p+\ndZbO+EN+/uNRkW9dE9iu13Jg1r2lqkXBrVgogtykKJr4LyKIPi1gVejmvx+Skhd0\n/difCVZZRs+zMjrtX2eOsttRREfVlIYF+hO5G94/hYCuh9vz+uOC5HESsswT7qt7\nfjoN8wnkPTJ8pkEOvuoMgQKODrhQXO6uo04tlMnUeekEcxRrHzfx4IGWhkoesbH6\njRaqdVx2NwG8XdIJaShH4Iws5mkmp7oFk0SrKSG4/hDqgtdTZHgO1JM5ZsZxUsDO\n2EJLCAYXh3D5z3RSh27YRKx1MH3x4kykdbRhEN7B9sqnKJvwN9mbdJ6geGzL8gIG\nO7OaJTPnAgMBAAECggEAAxgj4oq2IECBDxEmSDMXV5bpdAm6Is3q5elTqnNo47Dt\nbS9jd8lor8WC6jbkKRTcCJ8p2Vpv4TwJl+y72XMccD8PM1cMBaHGMJzP6wG8+Yx+\n6UymFG4R1zy9Qgq6XvjXLcAdi7pZ1br39ZnqGQRyxD4r6n0jo+BETLhFDfwJysHt\n+751M5vzitTXO2/RmUheYxt8iHv4oaDKPjZyv7JSNnLChk/QWqzi8VpU+ofk0M9G\nZ5ydIyIlZZb+ZsE8r7kuFnh6D7Om5CfLpxisF7g/ZpV4XzxU+ZmX6D6B56lWzDO2\nxCgbPE96xmTtgh/KCEiKpJfhOzGx24Dt/hvAhzGXgQKBgQDIT9eCJ2G+Wnz/LuMk\nf3D+cOl6eqRl67mvq0532L898M/vrOmFbcFM20IGSjOZCBNFrqg7XfXiAQdk6Zao\nYmL7DP0/Fkx6nKuLQ5MPnfs5kPzXWil1oZV4jF8g1kXxbkGFydN2Z0vKnXBwu3A+\nUSQMd2rbO8auHB164dmj6gpmtwKBgQDILnYwVAKzqNdU0cuUez36EZmBLsPg+5X1\nUxAHU3ooYzM0H1aB5kkm6VXSsxHayjIBnC/2ofjg2739Y1V9DebD/zmQNomRvCFQ\np64GkdPDAG/qKN5fmC6Q9PGDBNU8D6eSagQswZqMhZrvVOwCYriHUFvscQjNvceT\nuUL1ASbsUQKBgHtt706s86a23XTksGQp/zdZ3hRxg+GluhqMBWMF9Pm27Ho0YwSr\n18ODC5ESoe63MiDq+ZDzWfK0TZkZ8pK5ZWJq45W/KMsYxP+gWPrzjv0u4Q3V6dwp\nABBy9p8mSZz2InvNHHdGOUaVctaUORq9JuhjoT2L/OYGPwgcKN6+9T/LAoGAXKOr\nzHfEfFJBvJ4OYZubNfQZHwB+Y8rqPgr/mvRVzwUBeDicdycUaW6Iaia2t5LlC3u1\ncqTIoX7v8Kicsm/RgJjHkea7SXdPz5yZ26522oKESFA7gO/TdP/2GJUO/WmdOhPX\n9MJv/GIELogVZJE9JlnZAJXa5iPSjZmp0+qBkdECgYAH4PYmT/ek74JALpsxRvHn\njk6nYTgUiag65ZpeHnshBPi3CAug4APAERoG/qHMYZ5U6P91dKR5YQ173LgJnIXW\ny3LQsSCEHJsTmqKsOJ0UHCmwLqDcdy+WTiZYVrA6A6Z+HKR2LuLhnWACt2owqdoj\n8y+tO9uwzfsRbI5bvNx9bw==\n-----END PRIVATE KEY-----\n",
+  "client_email": "valeshield-bot@valeshield-nube.iam.gserviceaccount.com",
+  "client_id": "113512518533928266542",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/valeshield-bot%40valeshield-nube.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
