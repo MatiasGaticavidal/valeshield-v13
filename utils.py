@@ -41,6 +41,14 @@ def guardar_fila_nube(nueva_fila_dict, nombre_pestana):
         st.error(f"Error crítico al guardar en nube: {e}")
         return False
 
+# --- CARGA DE DATOS DESDE LA NUBE ---
+# Cargamos la pestaña "personal" (asegúrate que se llame así en Google Sheets)
+df_personal = obtener_datos_nube("personal")
+
+# Si la carga fue exitosa, limpiamos los RUTs de la base para que coincidan siempre
+if not df_personal.empty:
+    df_personal['RUT'] = df_personal['RUT'].apply(limpiar_rut)
+
 # --- CONSTANTES ---
 ARCHIVO_USUARIOS = "usuarios_sistema.csv"
 ARCHIVO_PERSONAL = "base_personal.csv"
@@ -131,4 +139,5 @@ def generar_pdf_accidentes(df_filtrado, mes_anio):
         pdf.ln()
     nombre = f"ValeShield_Reporte_{mes_anio.replace('/', '_')}.pdf"
     pdf.output(nombre)
+
     return nombre
