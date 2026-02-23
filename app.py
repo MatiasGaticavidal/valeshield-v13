@@ -10,6 +10,7 @@ from modules.soporte import mostrar_modulo_soporte
 from modules.seguridad import mostrar_modulo_usuarios, mostrar_cambio_clave
 from modules.estadisticas import mostrar_modulo_estadisticas
 from modules.investigacion import mostrar_modulo_investigacion # Nuevo Módulo
+from modules.importador_mutual import mostrar_modulo_importador
 import pandas as pd
 import os
 from datetime import datetime
@@ -88,6 +89,7 @@ with st.sidebar:
             sac.MenuItem('Reporte Preventivo', icon='shield-check'),
             sac.MenuItem('Registro Accidentes', icon='bandaid-fill'),
             sac.MenuItem('Investigación de Accidentes', icon='search'),
+            sac.MenuItem('Sincronizar Mutual', icon='cloud-arrow-up-fill'), # <--- AGREGAR AQUÍ
         ]),
         
         sac.MenuItem('Base de Personal', icon='people-fill'),
@@ -160,6 +162,9 @@ elif opcion == "Registro Accidentes":
 
 elif opcion == "Investigación de Accidentes":
     mostrar_modulo_investigacion()
+
+elif opcion == "Sincronizar Mutual": 
+    mostrar_modulo_importador()
 
 elif opcion == "Base de Personal":
     mostrar_modulo_personal(st.session_state['usuario_rol'])
