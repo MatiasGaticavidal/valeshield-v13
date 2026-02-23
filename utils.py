@@ -41,13 +41,23 @@ def guardar_fila_nube(nueva_fila_dict, nombre_pestana):
         st.error(f"Error crítico al guardar en nube: {e}")
         return False
 
-# --- CARGA DE DATOS DESDE LA NUBE ---
-# Cargamos la pestaña "personal" (asegúrate que se llame así en Google Sheets)
-df_personal = obtener_datos_nube("personal")
+# --- CARGA DE DATOS OPTIMIZADA ---
+@st.cache_data(ttl=600)  # Guarda los datos en memoria por 10 minutos
+def cargar_bases_maestras():
+    """Descarga personal y exámenes desde la nube solo cuando es necesario"""
+    personal = obtener_datos_nube("personal")
+    if not personal.empty:
+        personal['RUT'] = personal['RUT'].apply(limpiar_rut)
+    
+    # También cargamos los exámenes que mencionaste
+    examenes = obtener_datos_nube("examenes")
+    if not examenes.empty:
+        examenes['RUT'] = examenes['RUT'].apply(limpiar_rut)
+        
+    return personal, examenes
 
-# Si la carga fue exitosa, limpiamos los RUTs de la base para que coincidan siempre
-if not df_personal.empty:
-    df_personal['RUT'] = df_personal['RUT'].apply(limpiar_rut)
+# Ejecutamos la carga (esto es lo que usarás en tus módulos)
+df_personal, df_examenes = cargar_bases_maestras()
 
 # --- CONSTANTES ---
 ARCHIVO_USUARIOS = "usuarios_sistema.csv"
@@ -141,3 +151,4 @@ def generar_pdf_accidentes(df_filtrado, mes_anio):
     pdf.output(nombre)
 
     return nombre
+
