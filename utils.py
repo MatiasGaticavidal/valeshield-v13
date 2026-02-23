@@ -13,12 +13,16 @@ from datetime import datetime
 ARCHIVO_JSON = "valeshield-nube-6f1e07a93916.json" 
 NOMBRE_SHEET = "Base_Datos_ValeShield"
 
+# Constantes de Archivos
 ARCHIVO_USUARIOS = "usuarios_sistema.csv"
 ARCHIVO_PERSONAL = "base_personal.csv"
 ARCHIVO_ACCIDENTES = "registro_accidentes.csv"
 ARCHIVO_PREVENTIVOS = "reportes_dpr.csv"
 ARCHIVO_SOPORTE = "soporte_tecnico.csv"
 ARCHIVO_CONFIG_MENSUAL = "config_mensual_stats.csv"
+
+# URL necesaria para el módulo de personal (La que faltaba)
+URL_NOMINA = "https://docs.google.com/spreadsheets/d/1Chr-v7yWMqM3oX2XHY9f2mf816ftrqe8-HqxuMRsyz0/export?format=csv"
 
 # ==========================================
 # 🛠️ FUNCIONES DE APOYO (DEFINIDAS PRIMERO)
@@ -28,6 +32,7 @@ def limpiar_rut(rut_input):
     """Limpia y estandariza el RUT para evitar errores de búsqueda"""
     if not rut_input or pd.isna(rut_input): 
         return "S/R"
+    # Quitamos puntos, espacios, guiones y pasamos a mayúscula
     r = str(rut_input).replace(".", "").replace(" ", "").replace("-", "").strip().upper()
     if len(r) >= 2:
         return r[:-1] + "-" + r[-1]
@@ -90,18 +95,17 @@ def guardar_fila_nube(nueva_fila_dict, nombre_pestana):
         return False
 
 # ==========================================
-# 📊 CARGA DE DATOS MAESTROS (CON LIMPIEZA)
+# 📊 CARGA DE DATOS MAESTROS
 # ==========================================
 
 @st.cache_data(ttl=600)
 def cargar_bases_maestras():
-    """Descarga personal y exámenes eliminando duplicados para evitar colapsos"""
+    """Descarga personal y exámenes eliminando duplicados"""
     # Carga de Personal
     personal = obtener_datos_nube("personal")
     if not personal.empty:
         personal.columns = [c.strip().upper() for c in personal.columns]
         personal['RUT'] = personal['RUT'].apply(limpiar_rut)
-        # Eliminamos duplicados por RUT para evitar el ValueError de índices
         personal = personal.drop_duplicates(subset=['RUT'], keep='first')
     
     # Carga de Exámenes
@@ -159,7 +163,6 @@ def generar_pdf_accidentes(df_filtrado, mes_anio):
     return nombre
 
 # ==========================================
-# 🚀 EJECUCIÓN INICIAL (AL FINAL DEL ARCHIVO)
+# 🚀 EJECUCIÓN INICIAL (AL FINAL)
 # ==========================================
-# Llamamos a la carga después de que todas las funciones ya están definidas
 df_personal, df_examenes = cargar_bases_maestras()
