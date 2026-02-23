@@ -1,0 +1,10 @@
+streamlit
+google-generativeai
+python-dotenv
+graphviz
+PyPDF2
+pandas
+gspread
+google-auth
+fpdf
+streamlit-antd-components
