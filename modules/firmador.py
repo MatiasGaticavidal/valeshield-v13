@@ -81,32 +81,38 @@ def procesar_firma_y_sellar(canvas_image_data, token_firma):
     ruta_qr = f"qr_{token_firma}.png"
     qr.save(ruta_qr)
     
-    # 2. FASE 4: Usar el PDF ORIGINAL que subió la administradora
+    # 2. Usar el PDF ORIGINAL
     ruta_base = f"base_{token_firma}.pdf"
     ruta_salida = f"Documento_Firmado_{token_firma}.pdf"
     
     if os.path.exists(ruta_base):
         doc = fitz.open(ruta_base)
-        pagina = doc[-1] # Estampar siempre en la ÚLTIMA página del documento
     else:
-        # Modo de rescate por si se reinicia el servidor
         doc = fitz.open()
-        pagina = doc.new_page()
-        pagina.insert_text((50, 50), "ANEXO DE FIRMA LEGAL", fontsize=16)
+        doc.new_page()
 
-    # 3. Estampar en la parte baja de la hoja
-    rect_firma = fitz.Rect(50, 650, 250, 750)
-    pagina.insert_image(rect_firma, filename=ruta_firma)
-    pagina.insert_text((100, 760), f"Firma Digital - ID: {token_firma}", fontsize=8)
-    
-    rect_qr = fitz.Rect(450, 650, 550, 750)
-    pagina.insert_image(rect_qr, filename=ruta_qr)
-    pagina.insert_text((450, 760), "QR Validador Oficial", fontsize=8)
+    # 3. Estampado de Precisión Matemática
+    for i in range(len(doc)):
+        pagina = doc[i]
+        w = pagina.rect.width   # Ancho de la hoja
+        h = pagina.rect.height  # Alto de la hoja
+        
+        # A. ESTAMPAR QR EN TODAS LAS PÁGINAS (Esquina Inferior Derecha - Tamaño 50x50)
+        rect_qr = fitz.Rect(w - 65, h - 65, w - 15, h - 15)
+        pagina.insert_image(rect_qr, filename=ruta_qr)
+        # Texto miniatura del ID debajo del QR
+        pagina.insert_text((w - 65, h - 10), f"ID: {token_firma}", fontsize=6, color=(0.5, 0.5, 0.5))
+        
+        # B. ESTAMPAR FIRMA SÓLO EN LA ÚLTIMA PÁGINA (Esquina Inferior Izquierda - Tamaño Discreto)
+        if i == len(doc) - 1:
+            rect_firma = fitz.Rect(40, h - 70, 140, h - 20)
+            pagina.insert_image(rect_firma, filename=ruta_firma)
+            pagina.insert_text((40, h - 10), "Firma Digital Trabajador", fontsize=7, color=(0.5, 0.5, 0.5))
     
     doc.save(ruta_salida)
     doc.close()
     
-    # 4. FASE 4: Subir a Google Drive y Actualizar Sheets
+    # 4. Subir a Google Drive y Actualizar Sheets
     url_drive = subir_pdf_drive(ruta_salida, ruta_salida)
     if url_drive:
         actualizar_estado_firma(token_firma, url_drive)
@@ -115,4 +121,4 @@ def procesar_firma_y_sellar(canvas_image_data, token_firma):
     os.remove(ruta_firma)
     os.remove(ruta_qr)
     
-    return ruta_salida, url_drive # Devolvemos dos cosas a app.py
+    return ruta_salida, url_drive
