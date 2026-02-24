@@ -12,3 +12,4 @@ streamlit-antd-components
 streamlit-drawable-canvas
 PyMuPDF
 qrcode[pil]
+Pillow
