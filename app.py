@@ -45,8 +45,22 @@ components.html(
     height=0,
 )
 
+# ==========================================
+# 🕵️ ACCESO PÚBLICO: MÓDULO DE FIRMA EXTERNA (NUEVO SHIELDSIGN)
+# ==========================================
+# Si la URL tiene "?firmar=ID", el trabajador entra directo sin Login
+if "firmar" in st.query_params:
+    token_firma = st.query_params["firmar"]
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: #1E3A8A;'>🖋️ ShieldSign - Firma de Documentos</h2>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.info(f"**Validación Segura:** Estás accediendo a la firma electrónica del documento ID: **{token_firma}**")
+        st.warning("⚠️ El lienzo de firma interactiva se activará en la Fase 2 del desarrollo.")
+        # Aquí irá el canvas para que el trabajador firme con el dedo
+    st.stop() # Detiene la ejecución para que el trabajador NO vea tu sistema interno
+
 # --- 3. IMPORTACIÓN DE TUS MÓDULOS ---
-from utils import cargar_usuarios, limpiar_rut, ARCHIVO_SOPORTE
+from utils import cargar_usuarios, limpiar_rut, ARCHIVO_SOPORTE, df_personal # <-- Agregamos df_personal
 from modules.accidentes import mostrar_modulo_accidentes
 from modules.examenes import mostrar_modulo_examenes
 from modules.preventivo import mostrar_modulo_preventivo
@@ -56,6 +70,7 @@ from modules.seguridad import mostrar_modulo_usuarios, mostrar_cambio_clave
 from modules.estadisticas import mostrar_modulo_estadisticas
 from modules.investigacion import mostrar_modulo_investigacion 
 from modules.importador_mutual import mostrar_modulo_importador
+from modules.firmador import mostrar_modulo_firmador # <-- NUEVO MÓDULO SHIELDSIGN
 
 # --- 4. INICIALIZACIÓN DE ESTADOS ---
 if 'logueado' not in st.session_state: st.session_state['logueado'] = False
@@ -128,12 +143,13 @@ with st.sidebar:
             sac.MenuItem('Reporte Preventivo', icon='shield-check'),
             sac.MenuItem('Registro Accidentes', icon='bandaid-fill'),
             sac.MenuItem('Investigación de Accidentes', icon='search'),
-            sac.MenuItem('Sincronizar Mutual', icon='cloud-arrow-up-fill'), # <--- AGREGAR AQUÍ
+            sac.MenuItem('Sincronizar Mutual', icon='cloud-arrow-up-fill'), 
         ]),
         
         sac.MenuItem('Base de Personal', icon='people-fill'),
-
         sac.MenuItem('Exámenes Ocupacionales', icon='heart-pulse-fill'),
+        
+        sac.MenuItem('ShieldSign (Firmas)', icon='pen-fill'), # <--- NUEVO MENÚ DE FIRMAS
         
         sac.MenuItem(type='divider'),
         
@@ -182,12 +198,15 @@ if opcion == "Inicio":
     
     st.markdown("---")
     st.markdown("### 📌 Accesos Rápidos")
-    c1, c2 = st.columns(2)
-    if c1.button("🚨 Reportar Accidente Ahora", use_container_width=True):
+    c1, c2, c3 = st.columns(3) # <--- Tres columnas para el nuevo botón
+    if c1.button("🚨 Reportar Accidente", use_container_width=True):
         st.session_state['opcion_actual'] = "Registro Accidentes"
         st.rerun()
     if c2.button("📊 Ver KPIs del Mes", use_container_width=True):
         st.session_state['opcion_actual'] = "Estadísticas"
+        st.rerun()
+    if c3.button("🖋️ Emitir Documento", use_container_width=True): # <--- NUEVO ACCESO RÁPIDO
+        st.session_state['opcion_actual'] = "ShieldSign (Firmas)"
         st.rerun()
 
 elif opcion == "Estadísticas":
@@ -211,6 +230,9 @@ elif opcion == "Base de Personal":
 elif opcion == "Exámenes Ocupacionales":
     mostrar_modulo_examenes()
 
+elif opcion == "ShieldSign (Firmas)": # <--- NUEVA RUTA DEL SISTEMA
+    mostrar_modulo_firmador(df_personal)
+
 elif opcion == "Cambiar Clave":
     mostrar_cambio_clave(st.session_state['usuario_rut'])
 
@@ -219,5 +241,3 @@ elif opcion == "Solicitar Ayuda":
 
 elif opcion == "Gestión Usuarios":
     mostrar_modulo_usuarios()
-
-
