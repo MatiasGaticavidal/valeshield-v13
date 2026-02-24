@@ -59,14 +59,25 @@ if "firmar" in st.query_params:
     
     token_firma = st.query_params["firmar"]
     st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown(f"<h2 style='text-align: center; color: #1E3A8A;'>🖋️ ShieldSign</h2>", unsafe_allow_html=True)
+    
+    # --- 1. NUEVO TÍTULO PROFESIONAL ---
+    st.markdown(f"<h2 style='text-align: center; color: #1E3A8A;'>🖋️ Firma Digital ValeShield</h2>", unsafe_allow_html=True)
     
     with st.container(border=True):
-        st.info(f"📄 **Documento ID:** {token_firma}")
-        st.markdown("### Instrucciones:")
-        st.markdown("1. Lea el documento que se le ha entregado.\n2. Dibuje su firma en el recuadro inferior.\n3. Presione Guardar.")
+        st.info(f"📄 **Validación de Documento ID:** {token_firma}")
         
-        # EL LIENZO DE FIRMA TÁCTIL
+        # --- 2. ESPACIO RESERVADO PARA EL VISUALIZADOR DE PDF ---
+        st.markdown("### 1. Revise el Documento")
+        st.markdown("""
+        <div style="height: 300px; background-color: #525659; color: #d1d5db; display: flex; align-items: center; justify-content: center; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ccc;">
+            <p style="text-align: center; padding: 20px;"><i>El visor interactivo del PDF se activará aquí una vez enlazado con la base de datos maestra (Fase 3).</i></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("### 2. Firme el Documento")
+        st.markdown("Dibuje su firma en el recuadro inferior y presione Guardar.")
+        
+        # --- 3. EL LIENZO DE FIRMA TÁCTIL ---
         canvas_result = st_canvas(
             fill_color="rgba(255, 255, 255, 0)",  # Fondo transparente
             stroke_width=3,                       # Grosor del lápiz
@@ -205,7 +216,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 🚀 6. CARGA ÚNICA DE MÓDULOS (Lógica Expandida Original)
+# 🚀 6. CARGA ÚNICA DE MÓDULOS
 # ==========================================
 opcion = st.session_state['opcion_actual']
 
