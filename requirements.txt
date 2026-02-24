@@ -13,3 +13,4 @@ streamlit-drawable-canvas
 PyMuPDF
 qrcode[pil]
 Pillow
+google-api-python-client
