@@ -15,7 +15,7 @@ from datetime import datetime
 # ==========================================
 ARCHIVO_JSON = "valeshield-nube-6f1e07a93916.json"
 NOMBRE_SHEET = "Base_Datos_ValeShield"
-CARPETA_DRIVE_FIRMAS = "1cW67aI9ZHEC8zs78p1L1E6WNhXzCAVfS" # <--- TU CARPETA OFICIAL
+CARPETA_DRIVE_FIRMAS = "1cW67aI9ZHEC8zs78p1L1E6WNhXzCAVfS" # Tu carpeta oficial
 
 # Constantes de Archivos
 ARCHIVO_USUARIOS = "usuarios_sistema.csv"
@@ -25,6 +25,7 @@ ARCHIVO_PREVENTIVOS = "reportes_dpr.csv"
 ARCHIVO_SOPORTE = "soporte_tecnico.csv"
 ARCHIVO_CONFIG_MENSUAL = "config_mensual_stats.csv"
 
+# Link oficial de tu nómina
 URL_NOMINA = "https://docs.google.com/spreadsheets/d/1Chr-v7yWMqM3oX2XHY9f2mf816ftrqe8-HqxuMRsyz0/export?format=csv"
 
 # ==========================================
@@ -105,7 +106,6 @@ def actualizar_estado_firma(token, url_drive):
             registros = hoja.get_all_records()
             for i, row in enumerate(registros):
                 if str(row.get("ID_Documento")) == str(token):
-                    # +2 porque gspread cuenta desde 1 y hay fila de encabezados
                     hoja.update_cell(i + 2, 5, "Firmado") 
                     hoja.update_cell(i + 2, 7, datetime.now().strftime("%Y-%m-%d %H:%M:%S")) 
                     hoja.update_cell(i + 2, 8, url_drive)
@@ -127,7 +127,6 @@ def subir_pdf_drive(ruta_local, nombre_destino):
         media = MediaFileUpload(ruta_local, mimetype='application/pdf')
         file = servicio.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
         
-        # Otorga permisos de lectura automáticos para que tú o la empresa lo puedan abrir
         try:
             servicio.permissions().create(fileId=file.get('id'), body={'type': 'anyone', 'role': 'reader'}).execute()
         except: pass
@@ -141,17 +140,31 @@ def subir_pdf_drive(ruta_local, nombre_destino):
 # ==========================================
 @st.cache_data(ttl=600)
 def cargar_bases_maestras():
-    personal = obtener_datos_nube("personal")
+    # 1. CARGA DE PERSONAL (CORREGIDO: Lee directo desde la URL de nómina oficial)
+    try:
+        personal = pd.read_csv(URL_NOMINA)
+    except Exception as e:
+        # Respaldo en caso de que la URL falle
+        personal = obtener_datos_nube("personal")
+
     if not personal.empty:
+        # Estandarizamos las columnas para que coincidan con todo el sistema
         personal.columns = [c.strip().upper() for c in personal.columns]
-        personal['RUT'] = personal['RUT'].apply(limpiar_rut)
-        personal = personal.drop_duplicates(subset=['RUT'], keep='first')
+        if 'RUT' in personal.columns:
+            personal['RUT'] = personal['RUT'].apply(limpiar_rut)
+            personal = personal.drop_duplicates(subset=['RUT'], keep='first')
+            
+        # Parche de seguridad por si la columna en el CSV se llama "NOMBRES" en vez de "NOMBRE"
+        if 'NOMBRES' in personal.columns and 'NOMBRE' not in personal.columns:
+            personal.rename(columns={'NOMBRES': 'NOMBRE'}, inplace=True)
     
+    # 2. CARGA DE EXÁMENES
     examenes = obtener_datos_nube("examenes")
     if not examenes.empty:
         examenes.columns = [c.strip().upper() for c in examenes.columns]
-        examenes['RUT'] = examenes['RUT'].apply(limpiar_rut)
-        examenes = examenes.drop_duplicates(subset=['RUT', 'TIPO_EXAMEN'], keep='first')
+        if 'RUT' in examenes.columns:
+            examenes['RUT'] = examenes['RUT'].apply(limpiar_rut)
+            examenes = examenes.drop_duplicates(subset=['RUT', 'TIPO_EXAMEN'], keep='first')
         
     return personal, examenes
 
