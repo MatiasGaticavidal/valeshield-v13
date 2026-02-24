@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import re
 import gspread
+import json  # <--- NUEVO IMPORT NECESARIO PARA LEER LA BÓVEDA SECRETA
 from fpdf import FPDF
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -10,7 +11,7 @@ from datetime import datetime
 # ==========================================
 # 🛡️ CONFIGURACIÓN NUBE Y CONSTANTES
 # ==========================================
-ARCHIVO_JSON = "valeshield-nube-6f1e07a93916.json" 
+ARCHIVO_JSON = "valeshield-nube-6f1e07a93916.json" # Se mantiene el nombre como referencia, pero ya no se usa el archivo físico
 NOMBRE_SHEET = "Base_Datos_ValeShield"
 
 # Constantes de Archivos
@@ -61,23 +62,40 @@ def guardar_foto(foto_subida):
     return "Sin foto"
 
 # ==========================================
-# ☁️ CONEXIÓN Y GESTIÓN DE NUBE
+# ☁️ CONEXIÓN Y GESTIÓN DE NUBE (MODIFICADO PASO 3)
 # ==========================================
 
 def conectar_google_sheets():
-    """Establece la conexión maestra con Google Drive"""
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(ARCHIVO_JSON, scopes=scope)
-    client = gspread.authorize(creds)
-    return client.open(NOMBRE_SHEET)
+    """Establece la conexión maestra con Google Drive usando Secrets de Streamlit"""
+    try:
+        # 1. Lee el texto secreto de la bóveda de Streamlit
+        credenciales_texto = st.secrets["GOOGLE_CREDENTIALS"]
+        
+        # 2. Lo convierte en un diccionario de Python
+        credenciales_dict = json.loads(credenciales_texto)
+        
+        # 3. Define los permisos (scopes) de Google
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        
+        # 4. Autoriza usando el diccionario oculto en vez del archivo físico
+        creds = Credentials.from_service_account_info(credenciales_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        
+        return client.open(NOMBRE_SHEET)
+    except Exception as e:
+        st.error(f"Error de conexión a la nube: {e}")
+        # Si falla la conexión a los secretos, te avisará en rojo en la pantalla
+        return None
 
 def obtener_datos_nube(nombre_pestana):
     """Lee datos desde Google Sheets y los devuelve como DataFrame"""
     try:
         doc = conectar_google_sheets()
-        hoja = doc.worksheet(nombre_pestana)
-        datos = hoja.get_all_records()
-        return pd.DataFrame(datos)
+        if doc:
+            hoja = doc.worksheet(nombre_pestana)
+            datos = hoja.get_all_records()
+            return pd.DataFrame(datos)
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"Error al leer nube en {nombre_pestana}: {e}")
         return pd.DataFrame()
@@ -86,10 +104,12 @@ def guardar_fila_nube(nueva_fila_dict, nombre_pestana):
     """Guarda una nueva entrada al final de la hoja en la nube"""
     try:
         doc = conectar_google_sheets()
-        hoja = doc.worksheet(nombre_pestana)
-        valores = list(nueva_fila_dict.values())
-        hoja.append_row(valores)
-        return True
+        if doc:
+            hoja = doc.worksheet(nombre_pestana)
+            valores = list(nueva_fila_dict.values())
+            hoja.append_row(valores)
+            return True
+        return False
     except Exception as e:
         st.error(f"Error crítico al guardar en nube: {e}")
         return False
