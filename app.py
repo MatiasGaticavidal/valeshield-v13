@@ -4,6 +4,7 @@ import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import os
+import base64
 from datetime import datetime
 
 # ==========================================
@@ -51,7 +52,7 @@ components.html(
 )
 
 # ==========================================
-# 🕵️ FASE 4 SHIELDSIGN: MOTOR DE ESTAMPADO Y NUBE
+# 🕵️ FASE 4/5 SHIELDSIGN: MOTOR DE ESTAMPADO Y VISOR
 # ==========================================
 if "firmar" in st.query_params:
     from streamlit_drawable_canvas import st_canvas
@@ -63,12 +64,20 @@ if "firmar" in st.query_params:
     with st.container(border=True):
         st.info(f"📄 **Validación de Documento ID:** {token_firma}")
         
+        # --- MISIÓN B: VISOR DE PDF INCORPORADO ---
         st.markdown("### 1. Revise el Documento")
-        st.markdown("""
-        <div style="height: 300px; background-color: #525659; color: #d1d5db; display: flex; align-items: center; justify-content: center; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ccc;">
-            <p style="text-align: center; padding: 20px;"><i>El visor interactivo del PDF se activará aquí una vez enlazado con la base de datos maestra.</i></p>
-        </div>
-        """, unsafe_allow_html=True)
+        ruta_base = f"base_{token_firma}.pdf"
+        
+        if os.path.exists(ruta_base):
+            # Leemos el PDF guardado previamente y lo mostramos
+            with open(ruta_base, "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+            
+            # Incrustar el PDF usando un iframe adaptado
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}#toolbar=0&navpanes=0" width="100%" height="350" type="application/pdf" style="border: 1px solid #ccc; border-radius: 5px; margin-bottom: 20px;"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ El documento original se está procesando o no se encuentra disponible. Por favor avise a su jefatura.")
         
         st.markdown("### 2. Firme el Documento")
         st.markdown("Dibuje su firma en el recuadro inferior y presione Guardar.")
@@ -97,7 +106,7 @@ if "firmar" in st.query_params:
                     st.success("¡Documento legal generado y sellado!")
                     
                     if url_drive:
-                        st.info("☁️ Documento respaldado automáticamente en tu Google Drive.")
+                        st.info("☁️ Documento respaldado automáticamente en su carpeta.")
                     
                     with open(ruta_pdf, "rb") as pdf_file:
                         st.download_button(
