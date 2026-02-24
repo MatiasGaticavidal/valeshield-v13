@@ -6,7 +6,8 @@ import fitz
 import qrcode
 from PIL import Image
 import os
-from utils import guardar_fila_nube, subir_pdf_drive, actualizar_estado_firma
+# IMPORTANTE: Agregamos obtener_datos_nube para leer tu Google Sheets
+from utils import guardar_fila_nube, subir_pdf_drive, actualizar_estado_firma, obtener_datos_nube
 
 def mostrar_modulo_firmador(df_personal):
     st.markdown("## 🖋️ ShieldSign: Centro de Certificación Digital")
@@ -36,14 +37,12 @@ def mostrar_modulo_firmador(df_personal):
             if archivo_subido and trabajador_sel != "Seleccione un trabajador...":
                 token_unico = str(uuid.uuid4()).split('-')[0].upper()
                 
-                # FASE 4: Guardamos el PDF que tú subiste para que el trabajador lo use luego
                 with open(f"base_{token_unico}.pdf", "wb") as f:
                     f.write(archivo_subido.getbuffer())
                     
                 st.success(f"¡Solicitud creada! ID de Rastreo: **{token_unico}**")
                 link_firma = f"https://valeshield-v13-vvhfbjz9nvddeysacj2pan.streamlit.app/?firmar={token_unico}"
                 
-                # FASE 4: Registramos el estado "Pendiente" en Google Sheets
                 rut_t = trabajador_sel.split(" - ")[0]
                 fila_pendiente = {
                     "ID_Documento": token_unico,
@@ -63,8 +62,40 @@ def mostrar_modulo_firmador(df_personal):
                 st.error("Debes subir un PDF y seleccionar un trabajador.")
 
     with tab_seguimiento:
-        st.markdown("### Documentos en Proceso")
-        st.info("Revisa Google Sheets (pestaña 'certificados') para ver el estado en tiempo real.")
+        # --- MISIÓN A: PANEL DE CONTROL EN TIEMPO REAL ---
+        st.markdown("### 📊 Panel de Control de Firmas")
+        
+        df_certificados = obtener_datos_nube("certificados")
+        
+        if not df_certificados.empty:
+            # 1. Métricas Rápidas
+            total = len(df_certificados)
+            firmados = len(df_certificados[df_certificados['Estado'] == 'Firmado'])
+            pendientes = total - firmados
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Emitidos", total)
+            c2.metric("Firmados ✅", firmados)
+            c3.metric("Pendientes ⏳", pendientes)
+            
+            st.markdown("---")
+            
+            # 2. Tabla Interactiva Inteligente
+            st.dataframe(
+                df_certificados,
+                column_config={
+                    "URL_Drive": st.column_config.LinkColumn("Archivo Oficial", display_text="📥 Abrir PDF"),
+                    "Link_Firma": st.column_config.LinkColumn("Link Trabajador", display_text="🔗 Copiar Link"),
+                    "Estado": st.column_config.TextColumn("Estado")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            if st.button("🔄 Actualizar Datos", use_container_width=True):
+                st.rerun()
+        else:
+            st.info("No hay documentos emitidos todavía. ¡Genera el primero en la pestaña de al lado!")
 
     with tab_config:
         st.markdown("### Configuración del Emisor")
