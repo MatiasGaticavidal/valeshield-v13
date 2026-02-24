@@ -5,7 +5,9 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+# ==========================================
+# 🛡️ 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO)
+# ==========================================
 st.set_page_config(
     page_title="ValeShield Pro",
     page_icon="🛡️", 
@@ -13,7 +15,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- 2. INYECCIÓN DE METADATOS PWA (AHORA SÍ) ---
+# ==========================================
+# 📱 2. INYECCIÓN DE METADATOS PWA (INSTALABLE)
+# ==========================================
 components.html(
     """
     <script>
@@ -46,21 +50,48 @@ components.html(
 )
 
 # ==========================================
-# 🕵️ ACCESO PÚBLICO: MÓDULO DE FIRMA EXTERNA (NUEVO SHIELDSIGN)
+# 🕵️ FASE 2 SHIELDSIGN: PANTALLA PÚBLICA DE FIRMA TÁCTIL
 # ==========================================
 # Si la URL tiene "?firmar=ID", el trabajador entra directo sin Login
 if "firmar" in st.query_params:
+    # Importamos la librería del lienzo solo si entra por aquí
+    from streamlit_drawable_canvas import st_canvas
+    
     token_firma = st.query_params["firmar"]
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown(f"<h2 style='text-align: center; color: #1E3A8A;'>🖋️ ShieldSign - Firma de Documentos</h2>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: #1E3A8A;'>🖋️ ShieldSign</h2>", unsafe_allow_html=True)
+    
     with st.container(border=True):
-        st.info(f"**Validación Segura:** Estás accediendo a la firma electrónica del documento ID: **{token_firma}**")
-        st.warning("⚠️ El lienzo de firma interactiva se activará en la Fase 2 del desarrollo.")
-        # Aquí irá el canvas para que el trabajador firme con el dedo
-    st.stop() # Detiene la ejecución para que el trabajador NO vea tu sistema interno
+        st.info(f"📄 **Documento ID:** {token_firma}")
+        st.markdown("### Instrucciones:")
+        st.markdown("1. Lea el documento que se le ha entregado.\n2. Dibuje su firma en el recuadro inferior.\n3. Presione Guardar.")
+        
+        # EL LIENZO DE FIRMA TÁCTIL
+        canvas_result = st_canvas(
+            fill_color="rgba(255, 255, 255, 0)",  # Fondo transparente
+            stroke_width=3,                       # Grosor del lápiz
+            stroke_color="#000000",               # Tinta negra
+            background_color="#f0f2f6",           # Fondo gris claro para guiar al trabajador
+            height=250,
+            width=350,
+            drawing_mode="freedraw",
+            key="canvas_firma",
+        )
+        
+        if st.button("Guardar Firma y Sellar Documento ✅", type="primary", use_container_width=True):
+            if canvas_result.image_data is not None:
+                st.success("✅ ¡Firma capturada con éxito!")
+                st.balloons()
+                st.info("🔄 Procesando documento legal... (Fase 3 en construcción)")
+            else:
+                st.error("⚠️ Debes dibujar tu firma antes de guardar.")
+                
+    st.stop() # CRÍTICO: Detiene el sistema para proteger ValeShield
 
-# --- 3. IMPORTACIÓN DE TUS MÓDULOS ---
-from utils import cargar_usuarios, limpiar_rut, ARCHIVO_SOPORTE, df_personal # <-- Agregamos df_personal
+# ==========================================
+# 📦 3. IMPORTACIÓN DE MÓDULOS INTERNOS
+# ==========================================
+from utils import cargar_usuarios, limpiar_rut, ARCHIVO_SOPORTE, df_personal
 from modules.accidentes import mostrar_modulo_accidentes
 from modules.examenes import mostrar_modulo_examenes
 from modules.preventivo import mostrar_modulo_preventivo
@@ -70,14 +101,14 @@ from modules.seguridad import mostrar_modulo_usuarios, mostrar_cambio_clave
 from modules.estadisticas import mostrar_modulo_estadisticas
 from modules.investigacion import mostrar_modulo_investigacion 
 from modules.importador_mutual import mostrar_modulo_importador
-from modules.firmador import mostrar_modulo_firmador # <-- NUEVO MÓDULO SHIELDSIGN
+from modules.firmador import mostrar_modulo_firmador 
 
-# --- 4. INICIALIZACIÓN DE ESTADOS ---
+# Inicialización de estados
 if 'logueado' not in st.session_state: st.session_state['logueado'] = False
 if 'opcion_actual' not in st.session_state: st.session_state['opcion_actual'] = "Inicio"
 
 # ==========================================
-# 🚪 LOGIN (ESTÉTICA MINIMALISTA)
+# 🚪 4. LOGIN (ESTÉTICA MINIMALISTA)
 # ==========================================
 if not st.session_state['logueado']:
     col1, col2, col3 = st.columns([1, 1.2, 1])
@@ -120,10 +151,9 @@ if not st.session_state['logueado']:
     st.stop()
 
 # ==========================================
-# 🏠 MENÚ LATERAL PROFESIONAL (ANTD STYLE)
+# 🏠 5. MENÚ LATERAL PROFESIONAL (ANTD STYLE)
 # ==========================================
 with st.sidebar:
-    # 1. PERFIL DE USUARIO
     st.markdown(f"""
         <div style='text-align: center; padding: 20px 0;'>
             <div style='width: 60px; height: 60px; background-color: #3b82f6; border-radius: 50%; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 24px; color: white;'>
@@ -134,7 +164,6 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. DEFINICIÓN DE ITEMS DEL MENÚ
     items_menu = [
         sac.MenuItem('Inicio', icon='house-door-fill'),
         
@@ -149,7 +178,7 @@ with st.sidebar:
         sac.MenuItem('Base de Personal', icon='people-fill'),
         sac.MenuItem('Exámenes Ocupacionales', icon='heart-pulse-fill'),
         
-        sac.MenuItem('ShieldSign (Firmas)', icon='pen-fill'), # <--- NUEVO MENÚ DE FIRMAS
+        sac.MenuItem('ShieldSign (Firmas)', icon='pen-fill'),
         
         sac.MenuItem(type='divider'),
         
@@ -162,15 +191,8 @@ with st.sidebar:
     if st.session_state['usuario_rol'] == 'admin':
         items_menu.append(sac.MenuItem('Gestión Usuarios', icon='person-lines-fill'))
 
-    # 3. RENDERIZADO DEL MENÚ
     opcion_seleccionada = sac.menu(
-        items=items_menu,
-        index=0,
-        format_func='title',
-        size='sm',
-        indent=20,
-        open_all=True,
-        color='blue',
+        items=items_menu, index=0, format_func='title', size='sm', indent=20, open_all=True, color='blue',
     )
 
     if opcion_seleccionada != st.session_state.get('opcion_actual_visual'):
@@ -183,7 +205,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 🚀 CARGA ÚNICA DE MÓDULOS (Lógica Limpia)
+# 🚀 6. CARGA ÚNICA DE MÓDULOS (Lógica Expandida Original)
 # ==========================================
 opcion = st.session_state['opcion_actual']
 
@@ -198,14 +220,14 @@ if opcion == "Inicio":
     
     st.markdown("---")
     st.markdown("### 📌 Accesos Rápidos")
-    c1, c2, c3 = st.columns(3) # <--- Tres columnas para el nuevo botón
+    c1, c2, c3 = st.columns(3)
     if c1.button("🚨 Reportar Accidente", use_container_width=True):
         st.session_state['opcion_actual'] = "Registro Accidentes"
         st.rerun()
     if c2.button("📊 Ver KPIs del Mes", use_container_width=True):
         st.session_state['opcion_actual'] = "Estadísticas"
         st.rerun()
-    if c3.button("🖋️ Emitir Documento", use_container_width=True): # <--- NUEVO ACCESO RÁPIDO
+    if c3.button("🖋️ Emitir Documento", use_container_width=True):
         st.session_state['opcion_actual'] = "ShieldSign (Firmas)"
         st.rerun()
 
@@ -230,7 +252,7 @@ elif opcion == "Base de Personal":
 elif opcion == "Exámenes Ocupacionales":
     mostrar_modulo_examenes()
 
-elif opcion == "ShieldSign (Firmas)": # <--- NUEVA RUTA DEL SISTEMA
+elif opcion == "ShieldSign (Firmas)":
     mostrar_modulo_firmador(df_personal)
 
 elif opcion == "Cambiar Clave":
