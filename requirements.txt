@@ -9,3 +9,6 @@ google-auth
 fpdf
 openpyxl
 streamlit-antd-components
+streamlit-drawable-canvas
+PyMuPDF
+qrcode[pil]
