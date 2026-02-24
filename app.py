@@ -89,7 +89,7 @@ if "firmar" in st.query_params:
             key="canvas_firma",
         )
         
-        if st.button("Guardar Firma y Sellar Documento ✅", type="primary", use_container_width=True):
+       if st.button("Guardar Firma y Sellar Documento ✅", type="primary", use_container_width=True):
             if canvas_result.image_data is not None:
                 st.success("✅ ¡Firma capturada con éxito!")
                 st.balloons()
@@ -274,3 +274,4 @@ elif opcion == "Solicitar Ayuda":
 
 elif opcion == "Gestión Usuarios":
     mostrar_modulo_usuarios()
+
