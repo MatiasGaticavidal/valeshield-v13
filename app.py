@@ -84,7 +84,7 @@ if "firmar" in st.query_params:
             key="canvas_firma",
         )
         
-        # EL BOTÓN CON LA INDENTACIÓN CORREGIDA Y MOTOR FASE 3
+# EL BOTÓN CON LA INDENTACIÓN CORREGIDA Y MOTOR FASE 4
         if st.button("Guardar Firma y Sellar Documento ✅", type="primary", use_container_width=True):
             if canvas_result.image_data is not None:
                 if np.sum(canvas_result.image_data) > 0:
@@ -92,11 +92,28 @@ if "firmar" in st.query_params:
                     st.info("🔄 Estampando firmas y generando certificado PDF...")
                     
                     from modules.firmador import procesar_firma_y_sellar
-                    ruta_pdf = procesar_firma_y_sellar(canvas_result.image_data, token_firma)
+                    ruta_pdf, url_drive = procesar_firma_y_sellar(canvas_result.image_data, token_firma)
                     
                     st.balloons()
                     st.success("¡Documento legal generado y sellado!")
                     
+                    if url_drive:
+                        st.info("☁️ Documento respaldado automáticamente en tu Google Drive.")
+                    
+                    # NO OLVIDAR: Botón de descarga para el trabajador
+                    with open(ruta_pdf, "rb") as pdf_file:
+                        st.download_button(
+                            label="📥 Descargar Documento Firmado Oficial", 
+                            data=pdf_file, 
+                            file_name=ruta_pdf, 
+                            mime="application/pdf", 
+                            type="primary", 
+                            use_container_width=True
+                        )
+                else:
+                    st.error("⚠️ El lienzo está vacío. Debes dibujar tu firma.")
+            else:
+                st.error("⚠️ Error al capturar el lienzo.")
                     with open(ruta_pdf, "rb") as pdf_file:
                         st.download_button(
                             label="📥 Descargar Documento Firmado Oficial", 
@@ -261,3 +278,4 @@ elif opcion == "ShieldSign (Firmas)": mostrar_modulo_firmador(df_personal)
 elif opcion == "Cambiar Clave": mostrar_cambio_clave(st.session_state['usuario_rut'])
 elif opcion == "Solicitar Ayuda": mostrar_modulo_soporte(st.session_state['usuario_nombre'], st.session_state['usuario_rol'])
 elif opcion == "Gestión Usuarios": mostrar_modulo_usuarios()
+
