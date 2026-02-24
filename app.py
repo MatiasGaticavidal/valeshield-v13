@@ -1,7 +1,52 @@
 import streamlit as st
-import streamlit_antd_components as sac # La nueva librería visual
+import streamlit_antd_components as sac 
+import streamlit.components.v1 as components
+import pandas as pd
+import os
+from datetime import datetime
+
+# --- 1. CONFIGURACIÓN DE PÁGINA (SIEMPRE PRIMERO) ---
+st.set_page_config(
+    page_title="ValeShield Pro",
+    page_icon="🛡️", 
+    layout="wide",
+    initial_sidebar_state="collapsed" 
+)
+
+# --- 2. INYECCIÓN DE METADATOS PWA (AHORA SÍ) ---
+components.html(
+    """
+    <script>
+    const manifest = {
+      "name": "ValeShield Pro",
+      "short_name": "ValeShield",
+      "start_url": ".",
+      "display": "standalone",
+      "background_color": "#1E3A8A",
+      "theme_color": "#1E3A8A",
+      "description": "Sistema de Gestión de Riesgos Valdivia",
+      "icons": [
+        {
+          "src": "https://cdn-icons-png.flaticon.com/512/1063/1063251.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    };
+    const stringManifest = JSON.stringify(manifest);
+    const blob = new Blob([stringManifest], {type: 'application/json'});
+    const manifestURL = URL.createObjectURL(blob);
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = manifestURL;
+    document.getElementsByTagName('head')[0].appendChild(link);
+    </script>
+    """,
+    height=0,
+)
+
+# --- 3. IMPORTACIÓN DE TUS MÓDULOS ---
 from utils import cargar_usuarios, limpiar_rut, ARCHIVO_SOPORTE
-# Importación de Módulos
 from modules.accidentes import mostrar_modulo_accidentes
 from modules.examenes import mostrar_modulo_examenes
 from modules.preventivo import mostrar_modulo_preventivo
@@ -9,20 +54,10 @@ from modules.personal import mostrar_modulo_personal
 from modules.soporte import mostrar_modulo_soporte
 from modules.seguridad import mostrar_modulo_usuarios, mostrar_cambio_clave
 from modules.estadisticas import mostrar_modulo_estadisticas
-from modules.investigacion import mostrar_modulo_investigacion # Nuevo Módulo
+from modules.investigacion import mostrar_modulo_investigacion 
 from modules.importador_mutual import mostrar_modulo_importador
-import pandas as pd
-import os
-from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA PARA PWA ---
-st.set_page_config(
-    page_title="ValeShield Pro",
-    page_icon="🛡️", # Puedes cambiar esto por la URL de un logo cuadrado después
-    layout="wide",
-    initial_sidebar_state="collapsed" # En el celular es mejor que el menú empiece cerrado
-)
-# Inicialización de estados
+# --- 4. INICIALIZACIÓN DE ESTADOS ---
 if 'logueado' not in st.session_state: st.session_state['logueado'] = False
 if 'opcion_actual' not in st.session_state: st.session_state['opcion_actual'] = "Inicio"
 
@@ -184,4 +219,5 @@ elif opcion == "Solicitar Ayuda":
 
 elif opcion == "Gestión Usuarios":
     mostrar_modulo_usuarios()
+
 
