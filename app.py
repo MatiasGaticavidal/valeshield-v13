@@ -15,9 +15,13 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="ValeShield Pro", page_icon="🛡️", layout="wide")
-
+# --- CONFIGURACIÓN DE PÁGINA PARA PWA ---
+st.set_page_config(
+    page_title="ValeShield Pro",
+    page_icon="🛡️", # Puedes cambiar esto por la URL de un logo cuadrado después
+    layout="wide",
+    initial_sidebar_state="collapsed" # En el celular es mejor que el menú empiece cerrado
+)
 # Inicialización de estados
 if 'logueado' not in st.session_state: st.session_state['logueado'] = False
 if 'opcion_actual' not in st.session_state: st.session_state['opcion_actual'] = "Inicio"
@@ -180,3 +184,4 @@ elif opcion == "Solicitar Ayuda":
 
 elif opcion == "Gestión Usuarios":
     mostrar_modulo_usuarios()
+
