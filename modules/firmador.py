@@ -2,19 +2,16 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import uuid
-import fitz  # PyMuPDF para manejar PDFs
+import fitz  
 import qrcode
 from PIL import Image
 import os
+from utils import guardar_fila_nube, subir_pdf_drive, actualizar_estado_firma
 
-# ----------------------------------------------------
-# 1. FUNCIÓN PRINCIPAL DEL MÓDULO (INTERFAZ VISUAL)
-# ----------------------------------------------------
 def mostrar_modulo_firmador(df_personal):
     st.markdown("## 🖋️ ShieldSign: Centro de Certificación Digital")
     st.markdown("Emisión y seguimiento de documentos con firma electrónica y sello QR.")
     
-    # Pestañas de gestión
     tab_emitir, tab_seguimiento, tab_config = st.tabs(["📤 Emitir Documento", "📊 Seguimiento de Firmas", "⚙️ Mi Firma Digital"])
     
     with tab_emitir:
@@ -24,7 +21,6 @@ def mostrar_modulo_firmador(df_personal):
         with col1:
             archivo_subido = st.file_uploader("Sube el PDF base (ODI, Contrato, Charla)", type=['pdf'])
             
-            # Selector de trabajador buscando en la base de personal
             if not df_personal.empty:
                 opciones_trabajadores = df_personal['RUT'] + " - " + df_personal['NOMBRE']
                 trabajador_sel = st.selectbox("Seleccionar Trabajador", ["Seleccione un trabajador..."] + opciones_trabajadores.tolist())
@@ -38,12 +34,28 @@ def mostrar_modulo_firmador(df_personal):
             
         if st.button("Generar Solicitud de Firma 🚀", type="primary", use_container_width=True):
             if archivo_subido and trabajador_sel != "Seleccione un trabajador...":
-                # Generamos un ID único y corto
                 token_unico = str(uuid.uuid4()).split('-')[0].upper()
-                st.success(f"¡Solicitud creada! ID de Rastreo: **{token_unico}**")
                 
-                # LINK REAL DE VALESHIELD
+                # FASE 4: Guardamos el PDF que tú subiste para que el trabajador lo use luego
+                with open(f"base_{token_unico}.pdf", "wb") as f:
+                    f.write(archivo_subido.getbuffer())
+                    
+                st.success(f"¡Solicitud creada! ID de Rastreo: **{token_unico}**")
                 link_firma = f"https://valeshield-v13-vvhfbjz9nvddeysacj2pan.streamlit.app/?firmar={token_unico}"
+                
+                # FASE 4: Registramos el estado "Pendiente" en Google Sheets
+                rut_t = trabajador_sel.split(" - ")[0]
+                fila_pendiente = {
+                    "ID_Documento": token_unico,
+                    "Fecha_Emision": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "RUT_Trabajador": rut_t,
+                    "Nombre_Documento": tipo_doc,
+                    "Estado": "Pendiente",
+                    "Link_Firma": link_firma,
+                    "Fecha_Firma": "",
+                    "URL_Drive": ""
+                }
+                guardar_fila_nube(fila_pendiente, "certificados")
                 
                 st.info(f"🔗 **Link para el trabajador:**\n{link_firma}")
                 st.markdown("*Copia este link y envíalo por WhatsApp al trabajador.*")
@@ -52,57 +64,55 @@ def mostrar_modulo_firmador(df_personal):
 
     with tab_seguimiento:
         st.markdown("### Documentos en Proceso")
-        st.info("Aquí se conectará la base de datos para ver quién falta por firmar y descargar los PDFs terminados.")
+        st.info("Revisa Google Sheets (pestaña 'certificados') para ver el estado en tiempo real.")
 
     with tab_config:
         st.markdown("### Configuración del Emisor")
-        st.warning("Antes de emitir, debes registrar tu firma digital (Asesor) para que se estampe automáticamente junto a la del trabajador.")
         st.file_uploader("Sube una foto de tu firma (PNG sin fondo recomendado)", type=['png', 'jpg'])
 
-# ----------------------------------------------------
-# 2. MOTOR DE ESTAMPADO (LÓGICA MATEMÁTICA Y LEGAL)
-# ----------------------------------------------------
 def procesar_firma_y_sellar(canvas_image_data, token_firma):
-    """Convierte el dibujo táctil, genera un QR y lo estampa en un PDF"""
-    
-    # 1. Convertir los datos táctiles de Streamlit en una imagen PNG real
+    # 1. Preparar imágenes de firma y QR
     img = Image.fromarray(canvas_image_data.astype('uint8'), 'RGBA')
     ruta_firma = f"firma_{token_firma}.png"
     img.save(ruta_firma)
     
-    # 2. Generar el Código QR de validación
     qr_data = f"https://valeshield-v13-vvhfbjz9nvddeysacj2pan.streamlit.app/?firmar={token_firma}"
     qr = qrcode.make(qr_data)
     ruta_qr = f"qr_{token_firma}.png"
     qr.save(ruta_qr)
     
-    # 3. Crear el PDF (Por ahora, crearemos una hoja oficial en blanco para probar)
+    # 2. FASE 4: Usar el PDF ORIGINAL que subió la administradora
+    ruta_base = f"base_{token_firma}.pdf"
     ruta_salida = f"Documento_Firmado_{token_firma}.pdf"
-    doc = fitz.open()
-    pagina = doc.new_page()
     
-    # Escribir el título y cuerpo del documento
-    pagina.insert_text((50, 50), "DOCUMENTO LEGAL DE PREVENCION", fontsize=16, fontname="helv", color=(0.1, 0.2, 0.5))
-    pagina.insert_text((50, 90), f"ID de Trazabilidad: {token_firma}", fontsize=10)
-    pagina.insert_text((50, 130), "Yo, mediante la presente firma, confirmo la lectura y aprobacion", fontsize=11)
-    pagina.insert_text((50, 150), "de los estandares de seguridad indicados por la empresa.", fontsize=11)
-    
-    # 4. Estampar la Firma (Coordenadas X, Y)
+    if os.path.exists(ruta_base):
+        doc = fitz.open(ruta_base)
+        pagina = doc[-1] # Estampar siempre en la ÚLTIMA página del documento
+    else:
+        # Modo de rescate por si se reinicia el servidor
+        doc = fitz.open()
+        pagina = doc.new_page()
+        pagina.insert_text((50, 50), "ANEXO DE FIRMA LEGAL", fontsize=16)
+
+    # 3. Estampar en la parte baja de la hoja
     rect_firma = fitz.Rect(50, 650, 250, 750)
     pagina.insert_image(rect_firma, filename=ruta_firma)
-    pagina.insert_text((100, 760), "Firma del Trabajador", fontsize=10)
+    pagina.insert_text((100, 760), f"Firma Digital - ID: {token_firma}", fontsize=8)
     
-    # 5. Estampar el Código QR
     rect_qr = fitz.Rect(450, 650, 550, 750)
     pagina.insert_image(rect_qr, filename=ruta_qr)
-    pagina.insert_text((440, 760), "Escanear para verificar validez", fontsize=8)
+    pagina.insert_text((450, 760), "QR Validador Oficial", fontsize=8)
     
-    # Guardar el PDF final
     doc.save(ruta_salida)
     doc.close()
     
-    # 6. Limpiar las imágenes temporales por seguridad de datos
+    # 4. FASE 4: Subir a Google Drive y Actualizar Sheets
+    url_drive = subir_pdf_drive(ruta_salida, ruta_salida)
+    if url_drive:
+        actualizar_estado_firma(token_firma, url_drive)
+    
+    # Limpiar basura del servidor
     os.remove(ruta_firma)
     os.remove(ruta_qr)
     
-    return ruta_salida
+    return ruta_salida, url_drive # Devolvemos dos cosas a app.py
