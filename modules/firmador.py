@@ -7,7 +7,9 @@ import qrcode
 from PIL import Image
 import os
 
-# Esta función la verá el administrador (Tú)
+# ----------------------------------------------------
+# 1. FUNCIÓN PRINCIPAL DEL MÓDULO (INTERFAZ VISUAL)
+# ----------------------------------------------------
 def mostrar_modulo_firmador(df_personal):
     st.markdown("## 🖋️ ShieldSign: Centro de Certificación Digital")
     st.markdown("Emisión y seguimiento de documentos con firma electrónica y sello QR.")
@@ -40,28 +42,27 @@ def mostrar_modulo_firmador(df_personal):
                 token_unico = str(uuid.uuid4()).split('-')[0].upper()
                 st.success(f"¡Solicitud creada! ID de Rastreo: **{token_unico}**")
                 
-                # Simulamos el link que enviaremos
-                link_firma = f"https://tu-app.streamlit.app/?firmar={token_unico}"
+                # LINK REAL DE VALESHIELD
+                link_firma = f"https://valeshield-v13-vvhfbjz9nvddeysacj2pan.streamlit.app/?firmar={token_unico}"
                 
                 st.info(f"🔗 **Link para el trabajador:**\n{link_firma}")
                 st.markdown("*Copia este link y envíalo por WhatsApp al trabajador.*")
-                
-                # Aquí a futuro insertaremos en Google Sheets la fila en estado "Pendiente"
             else:
                 st.error("Debes subir un PDF y seleccionar un trabajador.")
 
     with tab_seguimiento:
         st.markdown("### Documentos en Proceso")
         st.info("Aquí se conectará la base de datos para ver quién falta por firmar y descargar los PDFs terminados.")
-        # Aquí conectaremos el DataFrame de la pestaña 'certificados'
 
     with tab_config:
         st.markdown("### Configuración del Emisor")
         st.warning("Antes de emitir, debes registrar tu firma digital (Asesor) para que se estampe automáticamente junto a la del trabajador.")
-
         st.file_uploader("Sube una foto de tu firma (PNG sin fondo recomendado)", type=['png', 'jpg'])
 
-    def procesar_firma_y_sellar(canvas_image_data, token_firma):
+# ----------------------------------------------------
+# 2. MOTOR DE ESTAMPADO (LÓGICA MATEMÁTICA Y LEGAL)
+# ----------------------------------------------------
+def procesar_firma_y_sellar(canvas_image_data, token_firma):
     """Convierte el dibujo táctil, genera un QR y lo estampa en un PDF"""
     
     # 1. Convertir los datos táctiles de Streamlit en una imagen PNG real
