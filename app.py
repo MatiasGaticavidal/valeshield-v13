@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 📱 2. INYECCIÓN DE METADATOS PWA (INSTALABLE)
+# 📱 2. INYECCIÓN DE METADATOS PWA
 # ==========================================
 components.html(
     """
@@ -51,7 +51,7 @@ components.html(
 )
 
 # ==========================================
-# 🕵️ FASE 2 y 3 SHIELDSIGN: FIRMA TÁCTIL Y MOTOR
+# 🕵️ FASE 4 SHIELDSIGN: MOTOR DE ESTAMPADO Y NUBE
 # ==========================================
 if "firmar" in st.query_params:
     from streamlit_drawable_canvas import st_canvas
@@ -84,7 +84,6 @@ if "firmar" in st.query_params:
             key="canvas_firma",
         )
         
-# EL BOTÓN CON LA INDENTACIÓN CORREGIDA Y MOTOR FASE 4
         if st.button("Guardar Firma y Sellar Documento ✅", type="primary", use_container_width=True):
             if canvas_result.image_data is not None:
                 if np.sum(canvas_result.image_data) > 0:
@@ -100,20 +99,6 @@ if "firmar" in st.query_params:
                     if url_drive:
                         st.info("☁️ Documento respaldado automáticamente en tu Google Drive.")
                     
-                    # NO OLVIDAR: Botón de descarga para el trabajador
-                    with open(ruta_pdf, "rb") as pdf_file:
-                        st.download_button(
-                            label="📥 Descargar Documento Firmado Oficial", 
-                            data=pdf_file, 
-                            file_name=ruta_pdf, 
-                            mime="application/pdf", 
-                            type="primary", 
-                            use_container_width=True
-                        )
-                else:
-                    st.error("⚠️ El lienzo está vacío. Debes dibujar tu firma.")
-            else:
-                st.error("⚠️ Error al capturar el lienzo.")
                     with open(ruta_pdf, "rb") as pdf_file:
                         st.download_button(
                             label="📥 Descargar Documento Firmado Oficial", 
@@ -278,4 +263,3 @@ elif opcion == "ShieldSign (Firmas)": mostrar_modulo_firmador(df_personal)
 elif opcion == "Cambiar Clave": mostrar_cambio_clave(st.session_state['usuario_rut'])
 elif opcion == "Solicitar Ayuda": mostrar_modulo_soporte(st.session_state['usuario_nombre'], st.session_state['usuario_rol'])
 elif opcion == "Gestión Usuarios": mostrar_modulo_usuarios()
-
