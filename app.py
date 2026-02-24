@@ -64,26 +64,26 @@ if "firmar" in st.query_params:
     with st.container(border=True):
         st.info(f"📄 **Validación de Documento ID:** {token_firma}")
         
-        # --- MISIÓN B: VISOR DE PDF A PRUEBA DE CELULARES ---
+        # --- MISIÓN B: VISOR DE PDF CON SCROLL INCORPORADO ---
         st.markdown("### 1. Revise el Documento")
         ruta_base = f"base_{token_firma}.pdf"
         
         if os.path.exists(ruta_base):
-            import fitz  # Usamos el motor de PyMuPDF que ya instalaste
+            import fitz  
             try:
                 doc = fitz.open(ruta_base)
-                # Convertimos cada página en una imagen para que el celular no la bloquee
-                for num_pagina in range(len(doc)):
-                    pagina = doc.load_page(num_pagina)
-                    # Aumentamos la resolución (1.5) para que el texto se lea nítido
-                    pix = pagina.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-                    img_data = pix.tobytes("png")
-                    st.image(img_data, use_container_width=True, caption=f"Página {num_pagina + 1}")
+                # NUEVO: Contenedor de 450px de alto con barra de desplazamiento (Scroll)
+                with st.container(height=450):
+                    for num_pagina in range(len(doc)):
+                        pagina = doc.load_page(num_pagina)
+                        pix = pagina.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                        img_data = pix.tobytes("png")
+                        st.image(img_data, use_container_width=True)
                 doc.close()
             except Exception as e:
                 st.error("⚠️ Error al leer el documento original.")
         else:
-            st.warning("⚠️ El documento original se está procesando o no se encuentra disponible. Por favor avise a su jefatura.")
+            st.warning("⚠️ El documento original se está procesando o no se encuentra disponible.")
         
         st.markdown("### 2. Firme el Documento")
         st.markdown("Dibuje su firma en el recuadro inferior y presione Guardar.")
@@ -278,4 +278,5 @@ elif opcion == "ShieldSign (Firmas)": mostrar_modulo_firmador(df_personal)
 elif opcion == "Cambiar Clave": mostrar_cambio_clave(st.session_state['usuario_rut'])
 elif opcion == "Solicitar Ayuda": mostrar_modulo_soporte(st.session_state['usuario_nombre'], st.session_state['usuario_rol'])
 elif opcion == "Gestión Usuarios": mostrar_modulo_usuarios()
+
 
