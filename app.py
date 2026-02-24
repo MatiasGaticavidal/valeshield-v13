@@ -91,11 +91,31 @@ if "firmar" in st.query_params:
         
        if st.button("Guardar Firma y Sellar Documento ✅", type="primary", use_container_width=True):
             if canvas_result.image_data is not None:
-                st.success("✅ ¡Firma capturada con éxito!")
-                st.balloons()
-                st.info("🔄 Procesando documento legal... (Fase 3 en construcción)")
+                import numpy as np
+                # Verificamos si realmente dibujó algo o dejó el lienzo en blanco
+                if np.sum(canvas_result.image_data) > 0:
+                    st.success("✅ ¡Firma capturada con éxito!")
+                    st.info("🔄 Estampando firmas y generando certificado PDF...")
+                    
+                    # Llamamos al motor que acabas de crear
+                    from modules.firmador import procesar_firma_y_sellar
+                    ruta_pdf = procesar_firma_y_sellar(canvas_result.image_data, token_firma)
+                    
+                    st.balloons()
+                    st.success("¡Documento legal generado y sellado!")
+                    
+                    # Mostramos el botón para descargar el PDF final
+                    with open(ruta_pdf, "rb") as pdf_file:
+                        st.download_button(label="📥 Descargar Documento Firmado Oficial", 
+                                           data=pdf_file, 
+                                           file_name=ruta_pdf, 
+                                           mime="application/pdf", 
+                                           type="primary", 
+                                           use_container_width=True)
+                else:
+                    st.error("⚠️ El lienzo está vacío. Debes dibujar tu firma.")
             else:
-                st.error("⚠️ Debes dibujar tu firma antes de guardar.")
+                st.error("⚠️ Error al capturar el lienzo.")
                 
     st.stop() # CRÍTICO: Detiene el sistema para proteger ValeShield
 
@@ -274,4 +294,5 @@ elif opcion == "Solicitar Ayuda":
 
 elif opcion == "Gestión Usuarios":
     mostrar_modulo_usuarios()
+
 
