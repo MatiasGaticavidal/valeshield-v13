@@ -28,7 +28,7 @@ def mostrar_modulo_estadisticas():
     lista_meses_permitidos = lista_meses_completos[:mes_actual]
 
     # ==========================================
-    # 1. BARRA DE FILTROS SUPERIOR
+    # 1. BARRA DE FILTROS SUPERIOR Y CACHÉ
     # ==========================================
     with st.container(border=True):
         f1, f2, f3, f4, f5 = st.columns(5)
@@ -38,10 +38,15 @@ def mostrar_modulo_estadisticas():
         filtro_sucursal = f4.selectbox("Sucursal", ["Todas", "ECOM VALDIVIA", "MCT VALDIVIA", "PLC VALDIVIA"])
         
         c_btn1, c_btn2 = f5.columns(2)
-        c_btn1.button("👁️ Actualizar Datos", use_container_width=True)
-        c_btn2.button("Limpiar Filtros", use_container_width=True)
+        
+        # EL DESTRUCTOR DE CACHÉ: Obliga a leer el Sheets en vivo
+        if c_btn1.button("🔄 Actualizar / Limpiar Caché", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+            
+        if c_btn2.button("Limpiar Filtros", use_container_width=True):
+            st.rerun()
 
-    # PARACAÍDAS DE EMERGENCIA: Evita que la pantalla se ponga blanca si hay un error
     try:
         # ==========================================
         # 2. FUNCIONES DE LIMPIEZA Y CRUCE RUT
@@ -132,7 +137,6 @@ def mostrar_modulo_estadisticas():
             df_acc.columns = [str(c).strip().upper() for c in df_acc.columns]
             df_acc['IDX_ORIGINAL'] = df_acc.index 
             
-            # Reconoce columnas tanto de Mutual como de tu Formulario Manual (HORA)
             col_rut_acc = buscar_columna_segura(df_acc, ['RUT', 'RUN'])
             col_fecha = buscar_columna_segura(df_acc, ['FECHA', 'SINIESTRO', 'HORA'])
             col_trab = buscar_columna_segura(df_acc, ['TRABAJADOR', 'NOMBRE', 'AFECTADO', 'ACCIDENTADO']) 
@@ -146,26 +150,21 @@ def mostrar_modulo_estadisticas():
             df_acc['TIPO_NORM'] = df_acc[col_tipo].astype(str).str.upper() if col_tipo else "ACCIDENTE"
             df_acc['DIAS_NORM'] = pd.to_numeric(df_acc[col_dias], errors='coerce').fillna(0) if col_dias else 0
 
-            # CRUCE MAGICO: Si encuentra el RUT, absorbe los datos reales
             df_acc['TRABAJADOR_NORM'] = df_acc['RUT_LIMPIO'].map(mapa_nombre).fillna(df_acc[col_trab] if col_trab else "DESCONOCIDO")
             df_acc['SUCURSAL_FINAL'] = df_acc['RUT_LIMPIO'].map(mapa_sucursal).fillna(df_acc[col_suc] if col_suc else "S/I")
             df_acc['SEXO_FINAL'] = df_acc['RUT_LIMPIO'].map(mapa_sexo).fillna(df_acc[col_sex] if col_sex else "S/I")
 
-            # Eliminar Rechazados de forma 100% segura sin crashear
             df_acc_str = df_acc.astype(str)
             mask_rechazados = df_acc_str.apply(lambda col: col.str.upper().str.contains('RECHAZADO|INHABILITADO', na=False)).any(axis=1)
             df_acc = df_acc[~mask_rechazados]
 
-            # Procesar Fechas
             df_acc['FECHA_DT'] = df_acc['FECHA_NORM'].apply(parsear_fecha_invencible)
-            # Asegurar que el año es evaluado correctamente
             df_acc['AÑO_CALCULADO'] = pd.to_datetime(df_acc['FECHA_DT'], errors='coerce').dt.year
             df_acc = df_acc[(df_acc['AÑO_CALCULADO'] == filtro_ano) | (df_acc['AÑO_CALCULADO'].isna())]
             
             meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
             df_acc['MES_TXT'] = pd.to_datetime(df_acc['FECHA_DT'], errors='coerce').dt.month.map(meses_map).fillna("S/F")
 
-            # Filtros Finales de Interfaz
             df_acc = df_acc[df_acc['SUCURSAL_FINAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
             df_acc = df_acc[df_acc['SEXO_FINAL'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
@@ -189,7 +188,6 @@ def mostrar_modulo_estadisticas():
                 if df_cfg is None or df_cfg.empty: df_cfg = pd.DataFrame(columns=["AÑO", "MES", "SUCURSAL", "TRABAJADORES"])
             except: df_cfg = pd.DataFrame(columns=["AÑO", "MES", "SUCURSAL", "TRABAJADORES"])
                 
-            # Aseguramos columnas para que no crashee
             for col_necesaria in ["AÑO", "MES", "SUCURSAL", "TRABAJADORES"]:
                 if col_necesaria not in df_cfg.columns: df_cfg[col_necesaria] = None
                 
@@ -291,7 +289,7 @@ def mostrar_modulo_estadisticas():
                 rc2.error(f"**IND FRECI**\n\n{round((total_ctp/total_hh*1000000) if total_hh > 0 else 0,2)} / --")
 
         # ==========================================
-        # 9. EXPEDIENTES Y MODO DE DEPURACIÓN
+        # 9. EXPEDIENTES
         # ==========================================
         st.markdown("---")
         st.markdown("### 📁 Expedientes de Accidentes Registrados")
@@ -345,17 +343,24 @@ def mostrar_modulo_estadisticas():
         else:
             st.warning("⚠️ No hay accidentes procesados para el filtro actual.")
             
-        if df_acc.empty and not df_acc_completo.empty:
-            with st.expander("🚨 ALERTA: Ver Excel Original (Modo Diagnóstico)"):
-                st.error("Hay datos en la Nube, pero fueron ocultados por los filtros. Revisa si la columna 'ESTADO_REGISTRO' dice RECHAZADO.")
+        # ==========================================
+        # 10. INSPECTOR DE CONEXIÓN A LA NUBE
+        # ==========================================
+        st.markdown("---")
+        with st.expander("🛠️ Inspector de Conexión (Solo Prevención)"):
+            st.write(f"**Filas leídas desde la hoja 'Personal':** {len(df_personal_bruto)}")
+            st.write(f"**Filas leídas desde la hoja 'Accidentes':** {len(df_acc_completo)}")
+            if df_acc_completo.empty:
+                st.error("❌ LA APLICACIÓN ESTÁ RECIBIENDO 0 DATOS DE ACCIDENTES DESDE GOOGLE SHEETS. Sube un accidente o revisa que la hoja se llame correctamente.")
+            else:
+                st.success("✅ Conexión a la nube exitosa. Estos son los datos crudos que están llegando:")
                 st.dataframe(df_acc_completo)
 
     except Exception as e:
-        # EL PARACAÍDAS: Si algo falla, te mostrará el error en pantalla en lugar de un cuadro blanco
-        st.error(f"⚠️ Error crítico procesando los datos. Toma una captura de este mensaje: {str(e)}")
+        st.error(f"⚠️ Error crítico: {str(e)}")
 
     # ==========================================
-    # 10. BOTONES DE ACCIÓN (EXPORTAR PDF)
+    # 11. BOTONES DE ACCIÓN (EXPORTAR PDF)
     # ==========================================
     st.markdown("---")
     b1, b2, b3 = st.columns([2, 2, 6])
