@@ -1,58 +1,85 @@
 import streamlit as st
 import pandas as pd
-import os
-from utils import ARCHIVO_PERSONAL, URL_NOMINA, limpiar_rut
+from utils import guardar_fila_nube, limpiar_rut, obtener_datos_nube, actualizar_hoja_completa, fusionar_nominas
 
-def mostrar_modulo_personal(usuario_rol):
-    st.title("👷 Gestión de Base de Personal")
-    
-    if usuario_rol == 'admin':
-        t1, t2 = st.tabs(["📝 Registro / Búsqueda RUT", "📥 Sincronizar Maestra"])
-        
-        with t1:
-            col_b1, col_b2 = st.columns([2,1])
-            rut_bus = col_b1.text_input("Ingresar RUT para buscar", placeholder="12345678-9")
+def mostrar_modulo_personal(rol_usuario):
+    st.markdown("## 👥 Nómina Maestra de Personal")
+    st.markdown("Gestión centralizada de trabajadores para ELECTROCOM, MCT y subcontratos.")
+
+    # Obtenemos la base actual directamente desde la nube (Única Fuente de Verdad)
+    df_personal = obtener_datos_nube("personal")
+
+    tab_lista, tab_manual, tab_masivo = st.tabs(["📋 Base Actual", "👤 Ingreso Individual", "📂 Carga Masiva (Excel)"])
+
+    # --- PESTAÑA 1: VISUALIZACIÓN ---
+    with tab_lista:
+        if not df_personal.empty:
+            st.dataframe(df_personal, use_container_width=True, hide_index=True)
+            st.info(f"Dotación total activa: **{len(df_personal)} trabajadores** (Calculado automáticamente)")
+        else:
+            st.warning("La base de personal está vacía o no se pudo conectar.")
+
+    # --- PESTAÑA 2: INGRESO MANUAL ---
+    with tab_manual:
+        st.markdown("### Ingreso Rápido de Trabajador")
+        with st.form("form_ingreso_personal"):
+            col1, col2 = st.columns(2)
+            rut_nuevo = col1.text_input("RUT (Ej: 12345678-9)")
+            nombre_nuevo = col2.text_input("Nombre Completo")
             
-            if col_b2.button("🔍 Buscar en Maestra"):
-                try:
-                    df_nb = pd.read_csv(URL_NOMINA)
-                    df_nb.columns = df_nb.columns.str.strip().str.upper()
-                    res = df_nb[df_nb['RUT'].astype(str).apply(limpiar_rut) == limpiar_rut(rut_bus)]
-                    if not res.empty:
-                        st.session_state['trabajador_encontrado'] = res.iloc[0].to_dict()
-                        st.success("✅ Trabajador encontrado en la nube.")
-                    else:
-                        st.error("❌ No encontrado.")
-                except:
-                    st.error("Error al conectar con la nómina.")
+            col3, col4 = st.columns(2)
+            sucursales = [
+                "ELECTROCOM - Valdivia", 
+                "ELECTROCOM - Paillaco", 
+                "MCT", 
+                "Placa Centro", 
+                "00 - Prevención (Pruebas)", 
+                "Subcontrato / Externo"
+            ]
+            sucursal_nueva = col3.selectbox("Sucursal / Centro de Costo", sucursales)
+            cargo_nuevo = col4.text_input("Cargo")
 
-            with st.form("form_personal_modular", clear_on_submit=True):
-                w = st.session_state.get('trabajador_encontrado', {})
-                c1, c2 = st.columns(2)
-                f_rut = c1.text_input("RUT", value=w.get('RUT', rut_bus))
-                f_nom = c2.text_input("Nombre Completo", value=w.get('NOMBRE', ""))
-                f_car = c1.text_input("Cargo", value=w.get('CARGO', ""))
-                f_suc = c2.selectbox("Sucursal", ["ELECTROCOM VALDIVIA", "MCT VALDIVIA", "PLACA CENTRO VALDIVIA"], 
-                                     index=0 if w.get('SUCURSAL') not in ["ELECTROCOM VALDIVIA", "MCT VALDIVIA", "PLACA CENTRO VALDIVIA"] else ["ELECTROCOM VALDIVIA", "MCT VALDIVIA", "PLACA CENTRO VALDIVIA"].index(w.get('SUCURSAL')))
-                f_sex = st.selectbox("Sexo", ["MASCULINO", "FEMENINO"], index=0 if w.get('SEXO', '').upper() != 'FEMENINO' else 1)
-                
-                if st.form_submit_button("💾 Guardar localmente"):
-                    nuevo_p = {"RUT": limpiar_rut(f_rut), "NOMBRE": f_nom, "CARGO": f_car, "SUCURSAL": f_suc, "SEXO": f_sex}
-                    pd.DataFrame([nuevo_p]).to_csv(ARCHIVO_PERSONAL, mode='a', header=not os.path.exists(ARCHIVO_PERSONAL), index=False)
-                    st.success("✅ Guardado en base local.")
-                    if 'trabajador_encontrado' in st.session_state:
-                        del st.session_state['trabajador_encontrado']
-                    st.rerun()
+            if st.form_submit_button("Guardar Trabajador", type="primary", use_container_width=True):
+                if rut_nuevo and nombre_nuevo:
+                    nuevo_registro = {
+                        "RUT": limpiar_rut(rut_nuevo),
+                        "NOMBRE": nombre_nuevo.upper(),
+                        "SUCURSAL": sucursal_nueva,
+                        "CARGO": cargo_nuevo.upper()
+                    }
+                    if guardar_fila_nube(nuevo_registro, "personal"):
+                        st.success("✅ Trabajador agregado a la Nómina Maestra exitosamente.")
+                        # Recargamos la página para que aparezca al instante en la lista
+                        st.rerun() 
+                else:
+                    st.error("⚠️ Los campos RUT y Nombre son obligatorios.")
+
+    # --- PESTAÑA 3: IMPORTADOR MASIVO ---
+    with tab_masivo:
+        st.markdown("### 📥 Importador de Nómina (Excel / CSV)")
+        st.info("💡 Tu archivo debe contener al menos estas columnas en la primera fila: **RUT, NOMBRE, SUCURSAL, CARGO**")
         
-        with t2:
-            if st.button("🔄 Sincronizar TODA la Nómina"):
-                try:
-                    df_m = pd.read_csv(URL_NOMINA)
-                    df_m.columns = df_m.columns.str.strip().str.upper()
-                    df_m[["RUT", "NOMBRE", "CARGO", "SUCURSAL", "SEXO"]].dropna().to_csv(ARCHIVO_PERSONAL, index=False)
-                    st.success("✅ Sincronización exitosa.")
-                except:
-                    st.error("Error en las columnas del Excel.")
-
-    if os.path.exists(ARCHIVO_PERSONAL):
-        st.dataframe(pd.read_csv(ARCHIVO_PERSONAL, encoding='latin1'), use_container_width=True)
+        archivo_nomina = st.file_uploader("Sube tu archivo de Excel o CSV aquí", type=['xlsx', 'csv'])
+        
+        if archivo_nomina is not None:
+            try:
+                # Leer el archivo dependiendo de su formato
+                if archivo_nomina.name.endswith('.csv'):
+                    df_subido = pd.read_csv(archivo_nomina)
+                else:
+                    df_subido = pd.read_excel(archivo_nomina)
+                    
+                st.markdown("#### 👁️ Vista Previa de los Datos (Primeras 5 filas):")
+                st.dataframe(df_subido.head(5), use_container_width=True)
+                
+                if st.button("🔄 Fusionar y Actualizar Nómina Maestra", type="primary", use_container_width=True):
+                    with st.spinner("Procesando archivo, limpiando RUTs y buscando duplicados..."):
+                        # Ejecutamos las dos funciones maestras de utils.py
+                        df_fusionado = fusionar_nominas(df_personal, df_subido)
+                        
+                        if actualizar_hoja_completa(df_fusionado, "personal"):
+                            st.success("✅ ¡Nómina Maestra actualizada correctamente! Sin datos duplicados.")
+                            st.balloons()
+                            st.rerun()
+            except Exception as e:
+                st.error(f"⚠️ Error al leer el archivo. Revisa que el formato sea correcto. Detalle técnico: {e}")
