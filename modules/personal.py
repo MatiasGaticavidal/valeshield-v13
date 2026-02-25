@@ -6,22 +6,30 @@ def mostrar_modulo_personal(rol_usuario):
     st.markdown("## 👥 Nómina Maestra de Personal")
     st.markdown("Gestión centralizada de trabajadores para estadísticas y módulos.")
 
-    # Obtenemos la base actual
+    # 1. Obtenemos la base actual desde tu Google Sheets
     df_personal = obtener_datos_nube("personal")
 
-    # Blindaje: Si la base es nueva o le faltan las columnas nuevas, las creamos al vuelo
-    if df_personal.empty:
-        df_personal = pd.DataFrame(columns=["RUT", "NOMBRE", "SUCURSAL", "CARGO", "SEXO", "ESTADO"])
+    # 2. BLINDAJE DE COLUMNAS (Para no perder tu información antigua)
+    if not df_personal.empty:
+        # Convertimos todas las columnas a mayúsculas internamente para que coincidan siempre
+        df_personal.columns = [str(c).strip().upper() for c in df_personal.columns]
     else:
-        if "SEXO" not in df_personal.columns: df_personal["SEXO"] = "S/I"
-        if "ESTADO" not in df_personal.columns: df_personal["ESTADO"] = "Activo"
+        df_personal = pd.DataFrame(columns=["RUT", "NOMBRE", "SUCURSAL", "CARGO", "SEXO", "ESTADO"])
+
+    # Verificamos que existan todas las columnas obligatorias, si no, las creamos para los nuevos
+    for col in ["RUT", "NOMBRE", "SUCURSAL", "CARGO", "SEXO", "ESTADO"]:
+        if col not in df_personal.columns:
+            if col == "ESTADO":
+                df_personal[col] = "Activo"
+            else:
+                df_personal[col] = ""
 
     tab_lista, tab_manual, tab_masivo = st.tabs(["📋 Base Actual", "👤 Ingreso Individual", "📂 Carga Masiva (Excel)"])
 
     # --- PESTAÑA 1: VISUALIZACIÓN Y EDICIÓN ---
     with tab_lista:
         st.markdown("### Directorio de Personal Activo e Inactivo")
-        st.info("💡 **Tip de Admin:** Haz doble clic en la columna **ESTADO** o **SUCURSAL** de cualquier trabajador para editarlo. Luego presiona el botón Guardar abajo.")
+        st.info("💡 **Tip de Admin:** Haz doble clic en la columna **ESTADO** o **SUCURSAL** de cualquier trabajador para editarlo. Luego presiona Guardar abajo.")
         
         # Filtro matemático: Excluimos pruebas y finiquitados del conteo oficial
         df_activos = df_personal[
@@ -111,8 +119,11 @@ def mostrar_modulo_personal(rol_usuario):
                 else:
                     df_subido = pd.read_excel(archivo_nomina)
                     
+                # Blindaje: Normalizamos las columnas del archivo subido
+                df_subido.columns = [str(c).strip().upper() for c in df_subido.columns]
+
                 # Si el excel no trae columna ESTADO, se la agregamos como Activo a todos
-                if 'ESTADO' not in [str(c).upper() for c in df_subido.columns]:
+                if 'ESTADO' not in df_subido.columns:
                     df_subido['ESTADO'] = 'Activo'
 
                 st.markdown("#### 👁️ Vista Previa de los Datos:")
