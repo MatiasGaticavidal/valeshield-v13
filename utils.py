@@ -209,3 +209,53 @@ def generar_pdf_accidentes(df_filtrado, mes_anio):
     return nombre
 
 df_personal, df_examenes = cargar_bases_maestras()
+
+# ==========================================
+# 🔄 FUNCIONES NUEVAS: CARGA MASIVA Y NÓMINA V15.2
+# ==========================================
+def actualizar_hoja_completa(df, nombre_pestana):
+    """Sobrescribe toda una pestaña con un DataFrame nuevo (Ideal para nóminas masivas)"""
+    try:
+        doc = conectar_google_sheets()
+        if doc:
+            hoja = doc.worksheet(nombre_pestana)
+            hoja.clear() # Limpiamos los datos antiguos de la pantalla
+            # Convertimos el DataFrame a lista de listas para subirlo a la nube en 1 segundo
+            datos_a_subir = [df.columns.values.tolist()] + df.fillna("").astype(str).values.tolist()
+            hoja.update(values=datos_a_subir, range_name='A1')
+            return True
+        return False
+    except Exception as e:
+        st.error(f"Error al sincronizar nómina masiva en la nube: {e}")
+        return False
+
+def fusionar_nominas(df_existente, df_nueva):
+    """Cruza la nómina antigua con el Excel nuevo. Actualiza existentes y agrega nuevos por RUT."""
+    # Estandarizamos las columnas a mayúsculas
+    df_nueva.columns = [str(c).strip().upper() for c in df_nueva.columns]
+    
+    # Aseguramos que el RUT sea la llave maestra y esté limpio
+    df_nueva['RUT'] = df_nueva['RUT'].apply(limpiar_rut)
+    df_nueva = df_nueva.drop_duplicates(subset=['RUT'], keep='last')
+    
+    if df_existente.empty:
+        return df_nueva
+        
+    df_existente['RUT'] = df_existente['RUT'].apply(limpiar_rut)
+    
+    # Establecemos el RUT como índice para que Python sepa a quién actualizar
+    df_existente.set_index('RUT', inplace=True)
+    df_nueva.set_index('RUT', inplace=True)
+    
+    # Actualizamos los datos de los que ya existen (ej. si le cambiaste la sucursal en el Excel)
+    df_existente.update(df_nueva) 
+    
+    # Encontramos los RUTs que son totalmente nuevos (contrataciones) y los agregamos
+    ruts_nuevos = df_nueva.index.difference(df_existente.index)
+    if not ruts_nuevos.empty:
+        df_existente = pd.concat([df_existente, df_nueva.loc[ruts_nuevos]])
+        
+    # Devolvemos el formato a la normalidad
+    df_existente.reset_index(inplace=True)
+    return df_existente
+
