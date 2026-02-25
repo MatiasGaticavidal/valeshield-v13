@@ -6,7 +6,7 @@ import os
 from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
-    # --- CSS MÁGICO PARA IMPRESIÓN LIMPIA DE PDF ---
+    # --- CSS PARA IMPRESIÓN LIMPIA DE PDF ---
     st.markdown("""
         <style>
         @media print {
@@ -36,11 +36,6 @@ def mostrar_modulo_estadisticas():
         filtro_sexo = f3.selectbox("Sexo", ["Ambos", "MASCULINO", "FEMENINO"]) 
         filtro_sucursal = f4.selectbox("Sucursal", ["Todas", "ECOM VALDIVIA", "MCT VALDIVIA", "PLC VALDIVIA"])
         
-        st.markdown("""<style>
-            .bot-ver { background-color: #fff3e0; color: #e65100; border: 1px solid #ffb74d; }
-            .bot-limpiar { background-color: #e3f2fd; color: #1565c0; border: 1px solid #64b5f6; }
-        </style>""", unsafe_allow_html=True)
-        
         c_btn1, c_btn2 = f5.columns(2)
         c_btn1.button("👁️ Actualizar Datos", use_container_width=True)
         c_btn2.button("Limpiar Filtros", use_container_width=True)
@@ -65,7 +60,6 @@ def mostrar_modulo_estadisticas():
         if f == "FEMENINO" and ("FEM" in v or v == "F"): return True
         return f == v
 
-    # Traductor robusto de fechas (arregla las fechas rotas de Excel)
     def parsear_fecha_robusta(val):
         try:
             if str(val).isdigit() or (isinstance(val, float) and val > 10000):
@@ -75,51 +69,45 @@ def mostrar_modulo_estadisticas():
             return pd.NaT
 
     # ==========================================
-    # 3. CARGA Y FILTRADO CRUZADO
+    # 3. CARGA DE DATOS Y CRUCE INTELIGENTE
     # ==========================================
-    df_personal = obtener_datos_nube("personal")
+    # A. Procesar Nómina de Personal
+    df_personal_bruto = obtener_datos_nube("personal")
+    df_personal = df_personal_bruto.copy() if not df_personal_bruto.empty else pd.DataFrame()
+    
     total_trabajadores, hombres, mujeres = 0, 0, 0
-    nombres_masculinos = []
-    nombres_femeninos = []
     
     if not df_personal.empty:
         df_personal.columns = [str(c).strip().upper() for c in df_personal.columns]
         
+        # Filtros de personal activo y sin sucursal de pruebas
         if 'ESTADO' in df_personal.columns:
             df_personal = df_personal[df_personal['ESTADO'].astype(str).str.upper() != 'FINIQUITADO']
         if 'SUCURSAL' in df_personal.columns:
             df_personal = df_personal[~df_personal['SUCURSAL'].astype(str).str.upper().str.contains('PRUEBAS')]
             df_personal = df_personal[df_personal['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
             
-        if 'SEXO' in df_personal.columns and 'NOMBRE' in df_personal.columns:
-            hombres_df = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "MASCULINO"))]
-            mujeres_df = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "FEMENINO"))]
-            
-            hombres = len(hombres_df)
-            mujeres = len(mujeres_df)
-            nombres_masculinos = hombres_df['NOMBRE'].astype(str).str.upper().tolist()
-            nombres_femeninos = mujeres_df['NOMBRE'].astype(str).str.upper().tolist()
-            
+        if 'SEXO' in df_personal.columns:
+            hombres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "MASCULINO"))])
+            mujeres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "FEMENINO"))])
             df_personal = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
         total_trabajadores = len(df_personal)
 
-    # --- PROCESAR ACCIDENTES (CON TRADUCTOR MUTUAL) ---
+    # B. Procesar Accidentes (Con Traductor de Mutual)
     df_acc_completo = obtener_datos_nube("accidentes")
     df_acc = df_acc_completo.copy() if not df_acc_completo.empty else pd.DataFrame()
     
     if not df_acc.empty:
         df_acc.columns = [str(c).strip().upper() for c in df_acc.columns]
         
-        # Traductor de Columnas Mutual
-        mapa_columnas = {
-            'FECHA ACCIDENTE': 'FECHA', 'FECHA SINIESTRO': 'FECHA',
-            'NOMBRE TRABAJADOR': 'TRABAJADOR', 'NOMBRES': 'TRABAJADOR',
-            'CLASIFICACION': 'TIPO', 'TIPO ACCIDENTE': 'TIPO',
-            'DIAS PERDIDOS': 'DIAS_PERDIDOS', 'DÍAS REPOSO': 'DIAS_PERDIDOS'
-        }
-        df_acc = df_acc.rename(columns=mapa_columnas)
-        
+        # Unificamos columnas sin importar cómo las llame la Mutual
+        for col in df_acc.columns:
+            if 'FECHA' in col: df_acc.rename(columns={col: 'FECHA'}, inplace=True)
+            if 'NOMBRE' in col or 'TRABAJADOR' in col or 'AFECTADO' in col: df_acc.rename(columns={col: 'TRABAJADOR'}, inplace=True)
+            if 'TIPO' in col or 'CLASIFICACION' in col: df_acc.rename(columns={col: 'TIPO'}, inplace=True)
+            if 'DIAS' in col or 'DÍAS' in col: df_acc.rename(columns={col: 'DIAS_PERDIDOS'}, inplace=True)
+
         if 'ESTADO_REGISTRO' in df_acc.columns:
             df_acc = df_acc[df_acc['ESTADO_REGISTRO'].astype(str).str.upper() != 'INHABILITADO']
 
@@ -129,22 +117,38 @@ def mostrar_modulo_estadisticas():
             meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
             df_acc['MES_TXT'] = df_acc['FECHA_LIMPIA'].dt.month.map(meses_map)
 
+        # --- MOTOR DE BÚSQUEDA CRUZADA (MAGIA) ---
+        # Si el accidente no tiene Sucursal o Sexo, lo busca en la Nómina Maestra comparando nombres
+        def cruzar_datos(row):
+            sucursal_acc = str(row.get('SUCURSAL', 'NAN')).upper()
+            sexo_acc = str(row.get('SEXO', 'NAN')).upper()
+            
+            if sucursal_acc != 'NAN' and sexo_acc != 'NAN':
+                return pd.Series([sucursal_acc, sexo_acc])
+                
+            n_acc = str(row.get('TRABAJADOR', '')).upper().replace(',', '').replace('.', '')
+            partes_acc = set(n_acc.split())
+            
+            if not df_personal_bruto.empty and 'NOMBRE' in df_personal_bruto.columns:
+                df_personal_bruto.columns = [str(c).strip().upper() for c in df_personal_bruto.columns]
+                for _, p_row in df_personal_bruto.iterrows():
+                    n_pers = str(p_row.get('NOMBRE', '')).upper().replace(',', '').replace('.', '')
+                    partes_pers = set(n_pers.split())
+                    # Si coinciden al menos 2 palabras (ej. Apellido y Nombre), asume que es la misma persona
+                    if len(partes_acc.intersection(partes_pers)) >= 2:
+                        return pd.Series([p_row.get('SUCURSAL', 'S/I'), p_row.get('SEXO', 'S/I')])
+            return pd.Series(['S/I', 'S/I'])
+
+        if 'TRABAJADOR' in df_acc.columns:
+            df_acc[['SUCURSAL_CALCULADA', 'SEXO_CALCULADO']] = df_acc.apply(cruzar_datos, axis=1)
+            df_acc['SUCURSAL'] = df_acc['SUCURSAL_CALCULADA']
+            df_acc['SEXO'] = df_acc['SEXO_CALCULADO']
+
+        # AHORA SÍ aplicamos los filtros con la información ya cruzada
         if 'SUCURSAL' in df_acc.columns:
             df_acc = df_acc[df_acc['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
-
-        # Filtro de Sexo Suave (Solo excluye si estamos 100% seguros que no corresponde)
-        if filtro_sexo != "Ambos" and 'TRABAJADOR' in df_acc.columns:
-            def coincide_sexo_accidente(nombre_acc):
-                n_acc = str(nombre_acc).upper().replace(',', '')
-                lista_buscar = nombres_masculinos if filtro_sexo == "MASCULINO" else nombres_femeninos
-                for n_pers in lista_buscar:
-                    partes_acc = set(n_acc.split())
-                    partes_pers = set(n_pers.replace(',', '').split())
-                    # Si al menos 2 palabras coinciden (ej. Apellido y Nombre), es la misma persona
-                    if len(partes_acc.intersection(partes_pers)) >= 2: return True
-                return False
-            
-            df_acc = df_acc[df_acc['TRABAJADOR'].apply(coincide_sexo_accidente)]
+        if 'SEXO' in df_acc.columns:
+            df_acc = df_acc[df_acc['SEXO'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
     # ==========================================
     # 4. TARJETAS DE RESUMEN
@@ -157,10 +161,10 @@ def mostrar_modulo_estadisticas():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    # 5. AJUSTE MANUAL DE DOTACIÓN
+    # 5. AJUSTE MANUAL DE DOTACIÓN (EXPANDER)
     # ==========================================
     with st.expander("⚙️ Editar Promedio de Trabajadores por Mes"):
-        st.info("Ingresa los promedios manuales aquí. El sistema dará prioridad a estos números para el cálculo de tasas.")
+        st.info("Ingresa los promedios manuales aquí. El sistema dará prioridad a estos números para el cálculo de tasas del mes correspondiente.")
         try:
             df_cfg = obtener_datos_nube("config_mensual")
             if df_cfg is None or df_cfg.empty:
@@ -193,6 +197,7 @@ def mostrar_modulo_estadisticas():
         idx_mes = i + 1
         x_trab = total_trabajadores 
         
+        # Reemplazo por Configuración Manual si existe
         if not df_cfg_editado.empty:
             mask = ((df_cfg_editado['AÑO'].astype(str) == str(filtro_ano)) & (df_cfg_editado['MES'].astype(str).str.upper() == mes.upper()) & (df_cfg_editado['SUCURSAL'].astype(str).str.upper() == filtro_sucursal.upper()))
             match = df_cfg_editado[mask]
@@ -212,9 +217,8 @@ def mostrar_modulo_estadisticas():
                 acc_stp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("STP|INCIDENTE|SIN TIEMPO", case=False, na=False)])
                 acc_tray = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("TRAYECTO", case=False, na=False)])
             
-            for col in datos_mes.columns:
-                if 'DIAS' in col or 'DÍAS' in col:
-                    dp += pd.to_numeric(datos_mes[col], errors='coerce').fillna(0).sum()
+            if 'DIAS_PERDIDOS' in datos_mes.columns:
+                dp += pd.to_numeric(datos_mes['DIAS_PERDIDOS'], errors='coerce').fillna(0).sum()
 
         tasa_acc = (acc_ctp / x_trab * 100) if x_trab > 0 else 0
         ind_frec = (acc_ctp / hh * 1000000) if hh > 0 else 0
@@ -265,7 +269,6 @@ def mostrar_modulo_estadisticas():
     st.info("💡 Despliega cada accidente para adjuntar o descargar su **DIAT** y su **Investigación**.")
 
     if not df_acc.empty:
-        # Validamos que existan las columnas de respaldo, si no, las creamos al vuelo
         if 'URL_DIAT' not in df_acc_completo.columns: df_acc_completo['URL_DIAT'] = ""
         if 'URL_INV' not in df_acc_completo.columns: df_acc_completo['URL_INV'] = ""
 
@@ -273,13 +276,14 @@ def mostrar_modulo_estadisticas():
             trabajador = row.get('TRABAJADOR', 'Desconocido')
             fecha_str = row['FECHA_LIMPIA'].strftime('%d-%m-%Y') if pd.notna(row.get('FECHA_LIMPIA')) else "S/F"
             tipo = row.get('TIPO', 'S/I')
+            sucursal_acc = row.get('SUCURSAL', 'S/I')
             
-            with st.expander(f"🤕 {fecha_str} | {trabajador} | {tipo}"):
+            with st.expander(f"🤕 {fecha_str} | {trabajador} | {sucursal_acc}"):
                 c1, c2 = st.columns(2)
                 
-                # --- GESTOR DE DIAT ---
-                url_diat = df_acc_completo.at[idx, 'URL_DIAT']
-                if pd.isna(url_diat) or url_diat == "":
+                # GESTOR DE DIAT
+                url_diat = str(df_acc_completo.at[idx, 'URL_DIAT'])
+                if pd.isna(url_diat) or url_diat == "" or url_diat == "nan":
                     archivo_diat = c1.file_uploader("Subir DIAT Mutual (PDF)", type=['pdf'], key=f"diat_{idx}")
                     if archivo_diat:
                         with st.spinner("Subiendo DIAT..."):
@@ -295,9 +299,9 @@ def mostrar_modulo_estadisticas():
                     c1.success("✅ DIAT Registrada")
                     c1.markdown(f"[📥 Ver / Descargar DIAT]({url_diat})")
 
-                # --- GESTOR DE INVESTIGACIÓN INTERNA ---
-                url_inv = df_acc_completo.at[idx, 'URL_INV']
-                if pd.isna(url_inv) or url_inv == "":
+                # GESTOR DE INVESTIGACIÓN INTERNA
+                url_inv = str(df_acc_completo.at[idx, 'URL_INV'])
+                if pd.isna(url_inv) or url_inv == "" or url_inv == "nan":
                     archivo_inv = c2.file_uploader("Subir Investigación (PDF)", type=['pdf'], key=f"inv_{idx}")
                     if archivo_inv:
                         with st.spinner("Subiendo Investigación..."):
