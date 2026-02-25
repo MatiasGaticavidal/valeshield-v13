@@ -6,17 +6,34 @@ def mostrar_modulo_personal(rol_usuario):
     st.markdown("## 👥 Nómina Maestra de Personal")
     st.markdown("Gestión centralizada de trabajadores para estadísticas y módulos.")
 
-    # 1. Obtenemos la base actual desde tu Google Sheets
+    # 1. Obtenemos la base actual
     df_personal = obtener_datos_nube("personal")
 
-    # 2. BLINDAJE DE COLUMNAS (Para no perder tu información antigua)
+    # 2. BLINDAJE Y TRADUCTOR DE DATOS ANTIGUOS
     if not df_personal.empty:
-        # Convertimos todas las columnas a mayúsculas internamente para que coincidan siempre
         df_personal.columns = [str(c).strip().upper() for c in df_personal.columns]
+        
+        # Traducimos el Sexo antiguo ("Masculino") al nuevo formato ("MASCULINO")
+        if 'SEXO' in df_personal.columns:
+            df_personal['SEXO'] = df_personal['SEXO'].astype(str).str.upper().str.strip()
+            
+        # Traducimos las sucursales antiguas a las nuevas opciones oficiales
+        if 'SUCURSAL' in df_personal.columns:
+            df_personal['SUCURSAL'] = df_personal['SUCURSAL'].astype(str).str.upper().str.strip()
+            mapeo_sucursales = {
+                "ECOM": "ECOM VALDIVIA",
+                "ELECTROCOM": "ECOM VALDIVIA",
+                "ELECTROCOM VALDIVIA": "ECOM VALDIVIA",
+                "MCT": "MCT VALDIVIA",
+                "PLC": "PLC VALDIVIA",
+                "PLACA CENTRO": "PLC VALDIVIA",
+                "NAN": ""
+            }
+            df_personal['SUCURSAL'] = df_personal['SUCURSAL'].replace(mapeo_sucursales)
     else:
         df_personal = pd.DataFrame(columns=["RUT", "NOMBRE", "SUCURSAL", "CARGO", "SEXO", "ESTADO"])
 
-    # Verificamos que existan todas las columnas obligatorias, si no, las creamos para los nuevos
+    # Verificamos que existan todas las columnas
     for col in ["RUT", "NOMBRE", "SUCURSAL", "CARGO", "SEXO", "ESTADO"]:
         if col not in df_personal.columns:
             if col == "ESTADO":
@@ -31,16 +48,14 @@ def mostrar_modulo_personal(rol_usuario):
         st.markdown("### Directorio de Personal Activo e Inactivo")
         st.info("💡 **Tip de Admin:** Haz doble clic en la columna **ESTADO** o **SUCURSAL** de cualquier trabajador para editarlo. Luego presiona Guardar abajo.")
         
-        # Filtro matemático: Excluimos pruebas y finiquitados del conteo oficial
+        # Filtro matemático
         df_activos = df_personal[
             (df_personal['ESTADO'] == 'Activo') & 
             (df_personal['SUCURSAL'] != 'PREVENCION (PRUEBAS)')
         ]
         
-        # Métrica limpia
         st.metric("Dotación Real Activa (Para Estadísticas Oficiales)", len(df_activos))
 
-        # Tabla interactiva (Data Editor)
         df_editado = st.data_editor(
             df_personal,
             column_config={
@@ -97,7 +112,7 @@ def mostrar_modulo_personal(rol_usuario):
                         "SUCURSAL": sucursal_nueva,
                         "CARGO": cargo_nuevo.upper(),
                         "SEXO": sexo_nuevo,
-                        "ESTADO": "Activo" # Entra activo por defecto
+                        "ESTADO": "Activo"
                     }
                     if guardar_fila_nube(nuevo_registro, "personal"):
                         st.success("✅ Trabajador agregado exitosamente.")
@@ -119,10 +134,8 @@ def mostrar_modulo_personal(rol_usuario):
                 else:
                     df_subido = pd.read_excel(archivo_nomina)
                     
-                # Blindaje: Normalizamos las columnas del archivo subido
                 df_subido.columns = [str(c).strip().upper() for c in df_subido.columns]
 
-                # Si el excel no trae columna ESTADO, se la agregamos como Activo a todos
                 if 'ESTADO' not in df_subido.columns:
                     df_subido['ESTADO'] = 'Activo'
 
