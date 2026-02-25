@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 import streamlit.components.v1 as components
 from datetime import datetime
-from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa
+import os
+from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
     # --- CSS MÁGICO PARA IMPRESIÓN LIMPIA DE PDF ---
@@ -20,10 +21,9 @@ def mostrar_modulo_estadisticas():
 
     st.markdown("### 📊 Panel de Control: Siniestralidad y Desempeño")
     
-    ano_actual = datetime.now().year # 2026
+    ano_actual = datetime.now().year
     mes_actual = datetime.now().month
     lista_meses_completos = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    
     lista_meses_permitidos = lista_meses_completos[:mes_actual]
 
     # ==========================================
@@ -65,11 +65,22 @@ def mostrar_modulo_estadisticas():
         if f == "FEMENINO" and ("FEM" in v or v == "F"): return True
         return f == v
 
+    # Traductor robusto de fechas (arregla las fechas rotas de Excel)
+    def parsear_fecha_robusta(val):
+        try:
+            if str(val).isdigit() or (isinstance(val, float) and val > 10000):
+                return pd.to_datetime('1899-12-30') + pd.to_timedelta(float(val), 'D')
+            return pd.to_datetime(val, dayfirst=True)
+        except:
+            return pd.NaT
+
     # ==========================================
     # 3. CARGA Y FILTRADO CRUZADO
     # ==========================================
     df_personal = obtener_datos_nube("personal")
     total_trabajadores, hombres, mujeres = 0, 0, 0
+    nombres_masculinos = []
+    nombres_femeninos = []
     
     if not df_personal.empty:
         df_personal.columns = [str(c).strip().upper() for c in df_personal.columns]
@@ -78,75 +89,77 @@ def mostrar_modulo_estadisticas():
             df_personal = df_personal[df_personal['ESTADO'].astype(str).str.upper() != 'FINIQUITADO']
         if 'SUCURSAL' in df_personal.columns:
             df_personal = df_personal[~df_personal['SUCURSAL'].astype(str).str.upper().str.contains('PRUEBAS')]
-
-        if 'SUCURSAL' in df_personal.columns:
             df_personal = df_personal[df_personal['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
             
-        if 'SEXO' in df_personal.columns:
-            hombres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "MASCULINO"))])
-            mujeres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "FEMENINO"))])
+        if 'SEXO' in df_personal.columns and 'NOMBRE' in df_personal.columns:
+            hombres_df = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "MASCULINO"))]
+            mujeres_df = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "FEMENINO"))]
+            
+            hombres = len(hombres_df)
+            mujeres = len(mujeres_df)
+            nombres_masculinos = hombres_df['NOMBRE'].astype(str).str.upper().tolist()
+            nombres_femeninos = mujeres_df['NOMBRE'].astype(str).str.upper().tolist()
+            
             df_personal = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
         total_trabajadores = len(df_personal)
 
     # --- PROCESAR ACCIDENTES (CON TRADUCTOR MUTUAL) ---
-    df_acc = obtener_datos_nube("accidentes")
+    df_acc_completo = obtener_datos_nube("accidentes")
+    df_acc = df_acc_completo.copy() if not df_acc_completo.empty else pd.DataFrame()
+    
     if not df_acc.empty:
         df_acc.columns = [str(c).strip().upper() for c in df_acc.columns]
         
-        # 1. TRADUCTOR DE COLUMNAS MUTUAL: Estandariza los nombres de columnas
+        # Traductor de Columnas Mutual
         mapa_columnas = {
-            'FECHA ACCIDENTE': 'FECHA',
-            'FECHA SINIESTRO': 'FECHA',
-            'NOMBRE TRABAJADOR': 'TRABAJADOR',
-            'NOMBRES': 'TRABAJADOR',
-            'CLASIFICACION': 'TIPO',
-            'TIPO ACCIDENTE': 'TIPO',
-            'DIAS PERDIDOS': 'DIAS_PERDIDOS',
-            'DÍAS REPOSO': 'DIAS_PERDIDOS'
+            'FECHA ACCIDENTE': 'FECHA', 'FECHA SINIESTRO': 'FECHA',
+            'NOMBRE TRABAJADOR': 'TRABAJADOR', 'NOMBRES': 'TRABAJADOR',
+            'CLASIFICACION': 'TIPO', 'TIPO ACCIDENTE': 'TIPO',
+            'DIAS PERDIDOS': 'DIAS_PERDIDOS', 'DÍAS REPOSO': 'DIAS_PERDIDOS'
         }
         df_acc = df_acc.rename(columns=mapa_columnas)
         
-        # Filtro de Inhabilitados
         if 'ESTADO_REGISTRO' in df_acc.columns:
             df_acc = df_acc[df_acc['ESTADO_REGISTRO'].astype(str).str.upper() != 'INHABILITADO']
 
-        # 2. MANEJO DE FECHAS CHILENAS (DD-MM-YYYY)
         if 'FECHA' in df_acc.columns:
-            # dayfirst=True asegura que lea 10-02 como 10 de Febrero, no 2 de Octubre
-            df_acc['FECHA'] = pd.to_datetime(df_acc['FECHA'], errors='coerce', dayfirst=True)
-            df_acc = df_acc[df_acc['FECHA'].dt.year == filtro_ano] 
+            df_acc['FECHA_LIMPIA'] = df_acc['FECHA'].apply(parsear_fecha_robusta)
+            df_acc = df_acc[df_acc['FECHA_LIMPIA'].dt.year == filtro_ano] 
             meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
-            df_acc['MES_TXT'] = df_acc['FECHA'].dt.month.map(meses_map)
+            df_acc['MES_TXT'] = df_acc['FECHA_LIMPIA'].dt.month.map(meses_map)
 
-        # Filtro Sucursal
         if 'SUCURSAL' in df_acc.columns:
             df_acc = df_acc[df_acc['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
 
-        # Filtro de Sexo Cruzado con Nómina Maestra
-        if filtro_sexo != "Ambos" and not df_personal.empty and 'NOMBRE' in df_personal.columns:
-            nombres_validos = df_personal['NOMBRE'].str.upper().tolist()
-            if 'TRABAJADOR' in df_acc.columns:
-                df_acc = df_acc[df_acc['TRABAJADOR'].astype(str).str.upper().isin(nombres_validos)]
+        # Filtro de Sexo Suave (Solo excluye si estamos 100% seguros que no corresponde)
+        if filtro_sexo != "Ambos" and 'TRABAJADOR' in df_acc.columns:
+            def coincide_sexo_accidente(nombre_acc):
+                n_acc = str(nombre_acc).upper().replace(',', '')
+                lista_buscar = nombres_masculinos if filtro_sexo == "MASCULINO" else nombres_femeninos
+                for n_pers in lista_buscar:
+                    partes_acc = set(n_acc.split())
+                    partes_pers = set(n_pers.replace(',', '').split())
+                    # Si al menos 2 palabras coinciden (ej. Apellido y Nombre), es la misma persona
+                    if len(partes_acc.intersection(partes_pers)) >= 2: return True
+                return False
+            
+            df_acc = df_acc[df_acc['TRABAJADOR'].apply(coincide_sexo_accidente)]
 
     # ==========================================
     # 4. TARJETAS DE RESUMEN
     # ==========================================
     t1, t2, t3 = st.columns(3)
-    with t1:
-        st.info(f"**DOTACIÓN ACTUAL FILTRADA**\n### {total_trabajadores}")
-    with t2:
-        st.success(f"**HOMBRES (En Filtro)**\n### {hombres if filtro_sexo in ['Ambos', 'MASCULINO'] else 0}")
-    with t3:
-        st.warning(f"**MUJERES (En Filtro)**\n### {mujeres if filtro_sexo in ['Ambos', 'FEMENINO'] else 0}")
+    t1.info(f"**DOTACIÓN ACTUAL FILTRADA**\n### {total_trabajadores}")
+    t2.success(f"**HOMBRES (En Filtro)**\n### {hombres if filtro_sexo in ['Ambos', 'MASCULINO'] else 0}")
+    t3.warning(f"**MUJERES (En Filtro)**\n### {mujeres if filtro_sexo in ['Ambos', 'FEMENINO'] else 0}")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    # 5. AJUSTE MANUAL DE DOTACIÓN MENSUAL (HISTORIAL)
+    # 5. AJUSTE MANUAL DE DOTACIÓN
     # ==========================================
-    st.markdown("### ⚙️ Ajuste de Historial de Dotación")
-    with st.expander("📝 Editar Promedio de Trabajadores por Mes"):
+    with st.expander("⚙️ Editar Promedio de Trabajadores por Mes"):
         st.info("Ingresa los promedios manuales aquí. El sistema dará prioridad a estos números para el cálculo de tasas.")
         try:
             df_cfg = obtener_datos_nube("config_mensual")
@@ -156,23 +169,18 @@ def mostrar_modulo_estadisticas():
             df_cfg = pd.DataFrame(columns=["AÑO", "MES", "SUCURSAL", "TRABAJADORES"])
             
         df_cfg.columns = [str(c).strip().upper() for c in df_cfg.columns]
-        
         df_cfg_editado = st.data_editor(
-            df_cfg,
-            num_rows="dynamic",
-            use_container_width=True,
+            df_cfg, num_rows="dynamic", use_container_width=True,
             column_config={
                 "AÑO": st.column_config.NumberColumn("Año", format="%d"),
                 "MES": st.column_config.SelectboxColumn("Mes", options=lista_meses_completos),
                 "SUCURSAL": st.column_config.SelectboxColumn("Sucursal", options=["Todas", "ECOM VALDIVIA", "MCT VALDIVIA", "PLC VALDIVIA"]),
                 "TRABAJADORES": st.column_config.NumberColumn("N° Promedio Trabajadores", min_value=0, step=1)
-            },
-            key="editor_config_mensual"
+            }, key="editor_config"
         )
-        
         if st.button("💾 Guardar Ajustes Mensuales", type="primary"):
             if actualizar_hoja_completa(df_cfg_editado, "config_mensual"):
-                st.success("✅ Historial actualizado. Recargando panel...")
+                st.success("✅ Historial actualizado.")
                 st.rerun()
 
     # ==========================================
@@ -186,11 +194,7 @@ def mostrar_modulo_estadisticas():
         x_trab = total_trabajadores 
         
         if not df_cfg_editado.empty:
-            mask = (
-                (df_cfg_editado['AÑO'].astype(str) == str(filtro_ano)) &
-                (df_cfg_editado['MES'].astype(str).str.upper() == mes.upper()) &
-                (df_cfg_editado['SUCURSAL'].astype(str).str.upper() == filtro_sucursal.upper())
-            )
+            mask = ((df_cfg_editado['AÑO'].astype(str) == str(filtro_ano)) & (df_cfg_editado['MES'].astype(str).str.upper() == mes.upper()) & (df_cfg_editado['SUCURSAL'].astype(str).str.upper() == filtro_sucursal.upper()))
             match = df_cfg_editado[mask]
             if not match.empty:
                 try: x_trab = int(pd.to_numeric(match.iloc[-1]['TRABAJADORES'], errors='coerce'))
@@ -203,13 +207,11 @@ def mostrar_modulo_estadisticas():
         if not df_acc.empty and 'MES_TXT' in df_acc.columns:
             datos_mes = df_acc[df_acc['MES_TXT'] == mes]
             
-            # 3. TRADUCTOR DE TIPOS DE ACCIDENTE (Detecta jerga de mutual)
             if 'TIPO' in datos_mes.columns:
-                acc_ctp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("CTP|CON TIEMPO|REPOSO", case=False, na=False)])
-                acc_stp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("STP|INCIDENTE|SIN TIEMPO|SIN REPOSO", case=False, na=False)])
+                acc_ctp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("CTP|CON TIEMPO|REPOSO|TRABAJO", case=False, na=False)])
+                acc_stp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("STP|INCIDENTE|SIN TIEMPO", case=False, na=False)])
                 acc_tray = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("TRAYECTO", case=False, na=False)])
             
-            # Sumar días buscando cualquier columna que hable de días
             for col in datos_mes.columns:
                 if 'DIAS' in col or 'DÍAS' in col:
                     dp += pd.to_numeric(datos_mes[col], errors='coerce').fillna(0).sum()
@@ -219,37 +221,23 @@ def mostrar_modulo_estadisticas():
         ind_grav = (dp / hh * 1000) if hh > 0 else 0
 
         filas_tabla.append({
-            "MES": mes,
-            "X TRAB": x_trab,
-            "ACC CTP": acc_ctp,
-            "ACC STP": acc_stp,
-            "ACC TRAY": acc_tray,
-            "DP": int(dp),
-            "TASA ACC": round(tasa_acc, 2),
-            "IND FRECI": round(ind_frec, 2),
-            "IND GRAV": round(ind_grav, 2),
-            "HH_REAL": hh 
+            "MES": mes, "X TRAB": x_trab, "ACC CTP": acc_ctp, "ACC STP": acc_stp, "ACC TRAY": acc_tray,
+            "DP": int(dp), "TASA ACC": round(tasa_acc, 2), "IND FRECI": round(ind_frec, 2), "IND GRAV": round(ind_grav, 2), "HH_REAL": hh 
         })
 
     df_tabla = pd.DataFrame(filas_tabla)
 
     # ==========================================
-    # 7. ZONA CENTRAL: VISUALIZACIÓN
+    # 7. VISUALIZACIÓN DE TABLA Y RESUMEN
     # ==========================================
     col_tabla, col_analisis = st.columns([6, 4]) 
-
-    total_ctp = df_tabla["ACC CTP"].sum()
-    total_dp = df_tabla["DP"].sum()
-    total_hh = df_tabla["HH_REAL"].sum()
-    
-    meses_activos = df_tabla[df_tabla["X TRAB"] > 0]
-    promedio_trab_anual = meses_activos["X TRAB"].mean() if not meses_activos.empty else 0
+    total_ctp, total_dp, total_hh = df_tabla["ACC CTP"].sum(), df_tabla["DP"].sum(), df_tabla["HH_REAL"].sum()
+    promedio_trab_anual = df_tabla[df_tabla["X TRAB"] > 0]["X TRAB"].mean() if not df_tabla[df_tabla["X TRAB"] > 0].empty else 0
 
     with col_tabla:
         with st.container(border=True):
             st.markdown("##### Detalle mensual")
             st.dataframe(df_tabla.drop(columns=["HH_REAL"]), hide_index=True, use_container_width=True)
-            
             st.markdown("**Totales Acumulados**")
             c_t1, c_t2, c_t3 = st.columns(3)
             c_t1.metric("Total ACC CTP", total_ctp)
@@ -264,96 +252,71 @@ def mostrar_modulo_estadisticas():
             c_comp2.selectbox("Mes a comparar", [filtro_mes], disabled=True)
             
             rc1, rc2 = st.columns(2)
-            with rc1:
-                st.info(f"**ACT (ACC CTP)**\n\n{total_ctp} / --")
-                st.success(f"**DP (Días P.)**\n\n{total_dp} / --")
-            with rc2:
-                tasa_acum = (total_ctp/promedio_trab_anual*100) if promedio_trab_anual > 0 else 0
-                st.warning(f"**TASA ACC**\n\n{round(tasa_acum,2)}% / --")
-                if_acum = (total_ctp/total_hh*1000000) if total_hh > 0 else 0
-                st.error(f"**IND FRECI**\n\n{round(if_acum,2)} / --")
-
-        with st.container(border=True):
-            st.markdown("##### Proyección anual (Datos Reales)")
-            mes_corte_texto = lista_meses_completos[meses_transcurridos-1] if meses_transcurridos > 0 else "N/A"
-            
-            if df_tabla['DP'].sum() > 0:
-                mes_critico_idx = df_tabla['DP'].idxmax()
-                mes_critico_nombre = df_tabla.loc[mes_critico_idx, 'MES']
-                mes_critico_dp = df_tabla.loc[mes_critico_idx, 'DP']
-            else:
-                mes_critico_nombre = "Ninguno"
-                mes_critico_dp = 0
-            
-            promedio_dias_acc = (total_dp / total_ctp) if total_ctp > 0 else 0
-            
-            factor_proy = 12 / meses_transcurridos if meses_transcurridos > 0 else 0
-            proy_act = int(round(total_ctp * factor_proy))
-            proy_dp = int(round(total_dp * factor_proy))
-            proy_hh = total_hh * factor_proy
-            
-            proy_tasa = (proy_act / promedio_trab_anual * 100) if promedio_trab_anual > 0 else 0
-            proy_if = (proy_act / proy_hh * 1000000) if proy_hh > 0 else 0
-            proy_ig = (proy_dp / proy_hh * 1000) if proy_hh > 0 else 0
-            
-            st.caption(f"Corte: {mes_corte_texto} ({meses_transcurridos} meses transcurridos)")
-            st.markdown(f"""
-            - **Mes crítico (DP):** {mes_critico_nombre} con {mes_critico_dp} días
-            - **Promedio días por accidente:** {promedio_dias_acc:.2f}
-            - **Proyección ACT anual:** {proy_act}
-            - **Proyección DP anual:** {proy_dp}
-            - **Proyección Tasa ACC:** {proy_tasa:.2f}%
-            - **Proyección IND FRECI:** {proy_if:.2f}
-            - **Proyección IND GRAV:** {proy_ig:.2f}
-            """)
+            rc1.info(f"**ACT (ACC CTP)**\n\n{total_ctp} / --")
+            rc1.success(f"**DP (Días P.)**\n\n{total_dp} / --")
+            rc2.warning(f"**TASA ACC**\n\n{round((total_ctp/promedio_trab_anual*100) if promedio_trab_anual > 0 else 0,2)}% / --")
+            rc2.error(f"**IND FRECI**\n\n{round((total_ctp/total_hh*1000000) if total_hh > 0 else 0,2)} / --")
 
     # ==========================================
-    # 8. GRÁFICOS DE MESES ACTIVOS
-    # ==========================================
-    st.markdown("<br>", unsafe_allow_html=True)
-    g1, g2 = st.columns(2)
-    
-    df_graficos = df_tabla[['MES', 'ACC CTP', 'DP']].copy()
-    df_graficos['MES'] = pd.Categorical(df_graficos['MES'], categories=lista_meses_completos, ordered=True)
-    df_graficos = df_graficos.set_index('MES')
-
-    with g1:
-        with st.container(border=True):
-            st.markdown("##### Accidentes por mes (CTP)")
-            st.bar_chart(df_graficos['ACC CTP'], color="#5c6bc0") 
-
-    with g2:
-        with st.container(border=True):
-            st.markdown("##### Días perdidos por mes")
-            st.line_chart(df_graficos['DP'], color="#ffa726") 
-
-    # ==========================================
-    # 9. TABLA RESUMEN DE ACCIDENTES (EXPEDIENTE)
+    # 8. EXPEDIENTES Y CARGA DE DIAT / INVESTIGACIÓN
     # ==========================================
     st.markdown("---")
-    st.markdown("### 📋 Listado Oficial de Accidentes Registrados")
-    st.info("💡 Este listado responde a los filtros aplicados arriba.")
-    
+    st.markdown("### 📁 Expedientes de Accidentes Registrados")
+    st.info("💡 Despliega cada accidente para adjuntar o descargar su **DIAT** y su **Investigación**.")
+
     if not df_acc.empty:
-        # Buscamos de forma flexible las columnas para mostrar en la tabla final
-        cols_finales = []
-        for c in ['FECHA', 'TRABAJADOR', 'SUCURSAL', 'TIPO']:
-            if c in df_acc.columns: cols_finales.append(c)
-        for c in df_acc.columns:
-            if 'DIAS' in c or 'DÍAS' in c: cols_finales.append(c)
-        
-        # Eliminar duplicados en la lista de columnas
-        cols_finales = list(dict.fromkeys(cols_finales))
-        
-        if cols_finales:
-            st.dataframe(df_acc[cols_finales], use_container_width=True, hide_index=True)
-        else:
-            st.dataframe(df_acc, use_container_width=True, hide_index=True)
+        # Validamos que existan las columnas de respaldo, si no, las creamos al vuelo
+        if 'URL_DIAT' not in df_acc_completo.columns: df_acc_completo['URL_DIAT'] = ""
+        if 'URL_INV' not in df_acc_completo.columns: df_acc_completo['URL_INV'] = ""
+
+        for idx, row in df_acc.iterrows():
+            trabajador = row.get('TRABAJADOR', 'Desconocido')
+            fecha_str = row['FECHA_LIMPIA'].strftime('%d-%m-%Y') if pd.notna(row.get('FECHA_LIMPIA')) else "S/F"
+            tipo = row.get('TIPO', 'S/I')
+            
+            with st.expander(f"🤕 {fecha_str} | {trabajador} | {tipo}"):
+                c1, c2 = st.columns(2)
+                
+                # --- GESTOR DE DIAT ---
+                url_diat = df_acc_completo.at[idx, 'URL_DIAT']
+                if pd.isna(url_diat) or url_diat == "":
+                    archivo_diat = c1.file_uploader("Subir DIAT Mutual (PDF)", type=['pdf'], key=f"diat_{idx}")
+                    if archivo_diat:
+                        with st.spinner("Subiendo DIAT..."):
+                            nombre_temp = f"DIAT_{trabajador.replace(' ', '_')}.pdf"
+                            with open(nombre_temp, "wb") as f: f.write(archivo_diat.getbuffer())
+                            url = subir_pdf_drive(nombre_temp, nombre_temp)
+                            if url:
+                                df_acc_completo.at[idx, 'URL_DIAT'] = url
+                                actualizar_hoja_completa(df_acc_completo, "accidentes")
+                                os.remove(nombre_temp)
+                                st.rerun()
+                else:
+                    c1.success("✅ DIAT Registrada")
+                    c1.markdown(f"[📥 Ver / Descargar DIAT]({url_diat})")
+
+                # --- GESTOR DE INVESTIGACIÓN INTERNA ---
+                url_inv = df_acc_completo.at[idx, 'URL_INV']
+                if pd.isna(url_inv) or url_inv == "":
+                    archivo_inv = c2.file_uploader("Subir Investigación (PDF)", type=['pdf'], key=f"inv_{idx}")
+                    if archivo_inv:
+                        with st.spinner("Subiendo Investigación..."):
+                            nombre_temp = f"INV_{trabajador.replace(' ', '_')}.pdf"
+                            with open(nombre_temp, "wb") as f: f.write(archivo_inv.getbuffer())
+                            url = subir_pdf_drive(nombre_temp, nombre_temp)
+                            if url:
+                                df_acc_completo.at[idx, 'URL_INV'] = url
+                                actualizar_hoja_completa(df_acc_completo, "accidentes")
+                                os.remove(nombre_temp)
+                                st.rerun()
+                else:
+                    c2.success("✅ Investigación Registrada")
+                    c2.markdown(f"[📥 Ver / Descargar Investigación]({url_inv})")
     else:
         st.success("✅ No hay accidentes registrados para los filtros seleccionados.")
 
     # ==========================================
-    # 10. BOTONES DE ACCIÓN (EXPORTAR PDF)
+    # 9. BOTONES DE ACCIÓN (EXPORTAR PDF)
     # ==========================================
     st.markdown("---")
     b1, b2, b3 = st.columns([2, 2, 6])
