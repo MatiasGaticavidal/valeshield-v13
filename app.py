@@ -250,7 +250,7 @@ if opcion == "Inicio":
     st.info(f"Bienvenido al Sistema de Gestión Integrado, {st.session_state['usuario_nombre']}")
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("Estado del Sistema", "Operativo", "v14.0")
+    col1.metric("Estado del Sistema", "Operativo", "v15.2")
     col2.metric("Sucursal Actual", "ELECTROCOM/MCT", "Valdivia")
     col3.metric("Días sin Accidentes", "Calculando...", "Ver Estadísticas")
     
@@ -278,6 +278,7 @@ elif opcion == "ShieldSign (Firmas)": mostrar_modulo_firmador(df_personal)
 elif opcion == "Cambiar Clave": mostrar_cambio_clave(st.session_state['usuario_rut'])
 elif opcion == "Solicitar Ayuda": mostrar_modulo_soporte(st.session_state['usuario_nombre'], st.session_state['usuario_rol'])
 elif opcion == "Gestión Usuarios": mostrar_modulo_usuarios()
+
 
 
 
