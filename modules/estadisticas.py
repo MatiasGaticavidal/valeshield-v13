@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit.components.v1 as components
 from datetime import datetime
 import os
+import re
 from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
@@ -41,7 +42,7 @@ def mostrar_modulo_estadisticas():
         c_btn2.button("Limpiar Filtros", use_container_width=True)
 
     # ==========================================
-    # 2. FUNCIONES DE TRADUCCIÓN (FUERZA BRUTA)
+    # 2. FUNCIONES DE LIMPIEZA EXTREMA (REGEX)
     # ==========================================
     def coincidencia_sucursal(valor_db, filtro):
         v = str(valor_db).upper().strip()
@@ -60,23 +61,33 @@ def mostrar_modulo_estadisticas():
         if f == "FEMENINO" and ("FEM" in v or v == "F"): return True
         return f == v
 
-    def parsear_fecha_extrema(val):
-        try:
-            if pd.isna(val) or str(val).strip() == "" or str(val).upper() == "NAN": return pd.NaT
-            # Solución a fechas seriales de Excel (ej: 45366)
-            if str(val).split('.')[0].isdigit() and float(val) > 10000:
-                return pd.to_datetime('1899-12-30') + pd.to_timedelta(float(val), unit='D')
-            # Forzamos formato día/mes/año que es el chileno
-            return pd.to_datetime(str(val), dayfirst=True, errors='coerce')
-        except:
+    def parsear_fecha_invencible(val):
+        """ Extrae solo la fecha pura, ignorando horas pegadas como 04-02-202600:00 """
+        if pd.isna(val) or str(val).strip() in ["", "NAN", "NAT"]: 
             return pd.NaT
+        val_str = str(val).strip()
+        
+        # Si es un número de serie de Excel
+        if val_str.replace('.', '', 1).isdigit() and float(val_str) > 10000:
+            return pd.to_datetime('1899-12-30') + pd.to_timedelta(float(val_str), unit='D')
+            
+        # Láser Regex: Busca un patrón de fecha DD-MM-YYYY o YYYY-MM-DD
+        match = re.search(r'(\d{2,4}[-/]\d{1,2}[-/]\d{2,4})', val_str)
+        if match:
+            clean_date = match.group(1)
+            return pd.to_datetime(clean_date, dayfirst=True, errors='coerce')
+            
+        return pd.to_datetime(val_str, dayfirst=True, errors='coerce')
 
-    def encontrar_columna(df, palabras_clave):
-        # Busca columnas ignorando espacios, mayúsculas y tildes
-        for col in df.columns:
-            col_limpia = str(col).upper().replace(' ', '').replace('Á', 'A').replace('Í', 'I')
-            for palabra in palabras_clave:
-                if palabra in col_limpia: return col
+    def encontrar_columna(df, opciones):
+        # Búsqueda exacta
+        for op in opciones:
+            for col in df.columns:
+                if str(col).strip().upper() == op: return col
+        # Búsqueda parcial si falla la exacta
+        for op in opciones:
+            for col in df.columns:
+                if op in str(col).strip().upper(): return col
         return None
 
     # ==========================================
@@ -103,59 +114,57 @@ def mostrar_modulo_estadisticas():
         total_trabajadores = len(df_personal)
 
     # ==========================================
-    # 4. CARGA DE ACCIDENTES (MOTOR DE EXTRACCIÓN TOTAL)
+    # 4. CARGA DE ACCIDENTES (MOTOR INTELIGENTE)
     # ==========================================
     df_acc_completo = obtener_datos_nube("accidentes")
     df_acc = df_acc_completo.copy() if not df_acc_completo.empty else pd.DataFrame()
     
     if not df_acc.empty:
-        # Guardamos el índice original para poder subir los PDFs después
         df_acc['IDX_ORIGINAL'] = df_acc.index 
         
-        # 1. Búsqueda inteligente de columnas (Fuerza Bruta)
-        col_fecha = encontrar_columna(df_acc, ['FECH', 'SINIESTRO'])
-        col_trab = encontrar_columna(df_acc, ['NOMB', 'TRAB', 'AFECT', 'RUT'])
-        col_tipo = encontrar_columna(df_acc, ['TIP', 'CLASIFICACION', 'CALIFICACION', 'ACC'])
-        col_dias = encontrar_columna(df_acc, ['DIA', 'REP', 'PERD'])
-        col_suc = encontrar_columna(df_acc, ['SUC', 'CEN', 'EMP'])
-        col_sex = encontrar_columna(df_acc, ['SEX', 'GEN'])
+        # Encontrar columnas clave usando Inteligencia
+        col_fecha = encontrar_columna(df_acc, ['FECHA ACCIDENTE', 'FECHA SINIESTRO', 'FECHA'])
+        col_trab = encontrar_columna(df_acc, ['TRABAJADOR', 'NOMBRE', 'AFECTADO']) 
+        col_tipo = encontrar_columna(df_acc, ['TIPO ACCIDENTE', 'CLASIFICACION', 'CALIFICACION', 'TIPO'])
+        col_dias = encontrar_columna(df_acc, ['DIAS PERDIDOS', 'DÍAS REPOSO', 'DIAS'])
+        col_suc = encontrar_columna(df_acc, ['SUCURSAL', 'CENTRO', 'FAENA'])
+        col_sex = encontrar_columna(df_acc, ['SEXO', 'GENERO'])
 
-        # 2. Normalizamos la tabla para que trabaje perfecta
+        # Normalizar Datos en columnas seguras
         df_acc['FECHA_NORM'] = df_acc[col_fecha] if col_fecha else pd.NaT
         df_acc['TRABAJADOR_NORM'] = df_acc[col_trab].astype(str) if col_trab else "DESCONOCIDO"
-        df_acc['TIPO_NORM'] = df_acc[col_tipo].astype(str).str.upper() if col_tipo else "CTP (ASIGNADO AUTO)"
+        df_acc['TIPO_NORM'] = df_acc[col_tipo].astype(str).upper() if col_tipo else "ACCIDENTE"
         df_acc['DIAS_NORM'] = pd.to_numeric(df_acc[col_dias], errors='coerce').fillna(0) if col_dias else 0
-        df_acc['SUC_NORM'] = df_acc[col_suc].astype(str).str.upper() if col_suc else "S/I"
-        df_acc['SEX_NORM'] = df_acc[col_sex].astype(str).str.upper() if col_sex else "S/I"
+        df_acc['SUC_NORM'] = df_acc[col_suc].astype(str).upper() if col_suc else "S/I"
+        df_acc['SEX_NORM'] = df_acc[col_sex].astype(str).upper() if col_sex else "S/I"
 
-        # 3. Parseo de Fecha Extrema
-        df_acc['FECHA_DT'] = df_acc['FECHA_NORM'].apply(parsear_fecha_extrema)
+        # Eliminar Rechazados o Inhabilitados buscando en cualquier columna
+        df_acc = df_acc[~df_acc.apply(lambda row: row.astype(str).str.upper().str.contains('RECHAZADO|INHABILITADO').any(), axis=1)]
+
+        # Limpiar Fecha Invencible
+        df_acc['FECHA_DT'] = df_acc['FECHA_NORM'].apply(parsear_fecha_invencible)
         
-        # 4. Filtro por Año (Solo dejamos pasar los que coinciden O los que no tienen fecha para no perderlos)
+        # Filtrar Año 2026 (y guardamos los que no tengan fecha para diagnosticarlos abajo)
         df_acc = df_acc[(df_acc['FECHA_DT'].dt.year == filtro_ano) | (df_acc['FECHA_DT'].isna())]
         
         meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
-        df_acc['MES_TXT'] = df_acc['FECHA_DT'].dt.month.map(meses_map)
-        df_acc['MES_TXT'] = df_acc['MES_TXT'].fillna("S/F") # S/F = Sin Fecha
+        df_acc['MES_TXT'] = df_acc['FECHA_DT'].dt.month.map(meses_map).fillna("S/F")
 
-        # 5. Motor de Cruce con Nómina Maestra (El Ladrón de Sucursales)
+        # Cruce para robar Sucursal y Sexo de la base si no vienen en la mutual
         def forzar_cruce(row):
             n_acc = str(row['TRABAJADOR_NORM']).upper().replace(',', '').replace('.', '').strip()
             if not df_personal_bruto.empty and 'NOMBRE' in df_personal_bruto.columns:
                 for _, p_row in df_personal_bruto.iterrows():
                     n_pers = str(p_row.get('NOMBRE', '')).upper().replace(',', '').replace('.', '').strip()
-                    # Si el nombre de la mutual está dentro del nombre de tu nómina o viceversa, es él.
                     if n_acc in n_pers or n_pers in n_acc:
                         return pd.Series([str(p_row.get('SUCURSAL', 'S/I')), str(p_row.get('SEXO', 'S/I'))])
             return pd.Series([row['SUC_NORM'], row['SEX_NORM']])
 
         df_acc[['SUC_CRUZADA', 'SEX_CRUZADO']] = df_acc.apply(forzar_cruce, axis=1)
-        
-        # Si la mutual mandó la sucursal vacía ("NAN" o "S/I"), usamos la que robamos de la nómina
         df_acc['SUCURSAL_FINAL'] = df_acc.apply(lambda r: r['SUC_CRUZADA'] if r['SUC_NORM'] in ['NAN', 'S/I', 'NONE', ''] else r['SUC_NORM'], axis=1)
         df_acc['SEXO_FINAL'] = df_acc.apply(lambda r: r['SEX_CRUZADO'] if r['SEX_NORM'] in ['NAN', 'S/I', 'NONE', ''] else r['SEX_NORM'], axis=1)
 
-        # 6. Filtros de Pantalla Finales
+        # Filtros Maestros Finales
         df_acc = df_acc[df_acc['SUCURSAL_FINAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
         df_acc = df_acc[df_acc['SEXO_FINAL'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
@@ -170,7 +179,7 @@ def mostrar_modulo_estadisticas():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    # 6. AJUSTE MANUAL DE DOTACIÓN (EXPANDER)
+    # 6. AJUSTE MANUAL DE DOTACIÓN
     # ==========================================
     with st.expander("⚙️ Editar Promedio de Trabajadores por Mes"):
         st.info("Ingresa los promedios manuales aquí.")
@@ -215,15 +224,27 @@ def mostrar_modulo_estadisticas():
         hh = 0 if idx_mes > meses_transcurridos else calcular_hh_estimadas(x_trab, mes)
 
         acc_ctp, acc_stp, acc_tray, dp = 0, 0, 0, 0
+        
         if not df_acc.empty:
             datos_mes = df_acc[df_acc['MES_TXT'] == mes]
-            
-            # Ampliamos el diccionario de palabras clave de accidentes
-            acc_ctp = len(datos_mes[datos_mes['TIPO_NORM'].str.contains("CTP|CON TIEMPO|REPOSO|TRABAJO|LABORAL", case=False, na=False)])
-            acc_stp = len(datos_mes[datos_mes['TIPO_NORM'].str.contains("STP|INCIDENTE|SIN TIEMPO|LEVE", case=False, na=False)])
-            acc_tray = len(datos_mes[datos_mes['TIPO_NORM'].str.contains("TRAYECTO", case=False, na=False)])
-            
-            dp += datos_mes['DIAS_NORM'].sum()
+            for _, acc_row in datos_mes.iterrows():
+                tipo_str = str(acc_row['TIPO_NORM']).upper()
+                dias_perdidos = float(acc_row['DIAS_NORM'])
+                
+                # Clasificación Quirúrgica
+                if "TRAYECTO" in tipo_str:
+                    acc_tray += 1
+                    dp += dias_perdidos
+                elif "ENFERMEDAD" in tipo_str or "EP" in tipo_str:
+                    pass # Enfermedades van por otro carril, no suman a Tasa CTP
+                else:
+                    if dias_perdidos > 0 or "CTP" in tipo_str or "CON TIEMPO" in tipo_str:
+                        acc_ctp += 1
+                    elif dias_perdidos == 0 or "STP" in tipo_str or "SIN TIEMPO" in tipo_str or "INCIDENTE" in tipo_str:
+                        acc_stp += 1
+                    else:
+                        acc_ctp += 1 
+                    dp += dias_perdidos
 
         tasa_acc = (acc_ctp / x_trab * 100) if x_trab > 0 else 0
         ind_frec = (acc_ctp / hh * 1000000) if hh > 0 else 0
@@ -284,7 +305,7 @@ def mostrar_modulo_estadisticas():
             tipo = row['TIPO_NORM']
             suc_final = row['SUCURSAL_FINAL']
             
-            with st.expander(f"🤕 {fecha_str} | {trabajador} | {suc_final}"):
+            with st.expander(f"🤕 {fecha_str} | {trabajador} | {suc_final} | Días: {row['DIAS_NORM']}"):
                 c1, c2 = st.columns(2)
                 
                 url_diat = str(df_acc_completo.at[idx, 'URL_DIAT']) if 'URL_DIAT' in df_acc_completo.columns else ""
@@ -320,12 +341,6 @@ def mostrar_modulo_estadisticas():
                     c2.success("✅ Investigación Registrada"); c2.markdown(f"[📥 Descargar]({url_inv})")
     else:
         st.warning("⚠️ No hay accidentes procesados para el filtro actual.")
-        
-    # Diagnóstico de Fuerza Bruta (Siempre visible si hay datos en la nube pero no en pantalla)
-    if df_acc.empty and not df_acc_completo.empty:
-        with st.expander("🚨 ALERTA DE DATOS: Ver Excel Original de la Nube (Diagnóstico)"):
-            st.error("Hay datos en tu planilla de Google, pero ninguno pasó el filtro de Año o Sucursal. Revisa cómo vienen escritos:")
-            st.dataframe(df_acc_completo)
 
     # ==========================================
     # 10. BOTONES DE ACCIÓN (EXPORTAR PDF)
