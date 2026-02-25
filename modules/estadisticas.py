@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import streamlit.components.v1 as components
 from datetime import datetime
-from utils import obtener_datos_nube, calcular_hh_estimadas
+from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa
 
 def mostrar_modulo_estadisticas():
     # --- CSS MÁGICO PARA IMPRESIÓN LIMPIA DE PDF ---
@@ -13,6 +13,7 @@ def mostrar_modulo_estadisticas():
             header[data-testid="stHeader"] { display: none !important; }
             .stApp { margin-top: -50px !important; }
             button { display: none !important; }
+            div[data-testid="stExpander"] { display: none !important; }
         }
         </style>
     """, unsafe_allow_html=True)
@@ -23,7 +24,7 @@ def mostrar_modulo_estadisticas():
     mes_actual = datetime.now().month
     lista_meses_completos = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
     
-    # Filtro Dinámico de Meses: Solo muestra hasta el mes actual del año en curso
+    # Filtro Dinámico de Meses: Solo muestra hasta el mes actual
     lista_meses_permitidos = lista_meses_completos[:mes_actual]
 
     # ==========================================
@@ -31,7 +32,6 @@ def mostrar_modulo_estadisticas():
     # ==========================================
     with st.container(border=True):
         f1, f2, f3, f4, f5 = st.columns(5)
-        # Solo permitimos de 2026 en adelante según el manual
         filtro_ano = f1.selectbox("Año", [2026, 2027, 2028])
         filtro_mes = f2.selectbox("Mes de Análisis", ["Año Completo"] + lista_meses_permitidos, index=0)
         filtro_sexo = f3.selectbox("Sexo", ["Ambos", "MASCULINO", "FEMENINO"]) 
@@ -47,69 +47,82 @@ def mostrar_modulo_estadisticas():
         c_btn2.button("Limpiar Filtros", use_container_width=True)
 
     # ==========================================
-    # 2. CARGA Y FILTRADO CRUZADO ESTRICTO (NUBE)
+    # 2. FUNCIONES DE TRADUCCIÓN FLEXIBLE
     # ==========================================
-    # A. Procesar Nómina de Personal desde Google Sheets
+    def coincidencia_sucursal(valor_db, filtro):
+        v = str(valor_db).upper()
+        f = str(filtro).upper()
+        if f == "TODAS": return True
+        if "ECOM" in f and ("ECOM" in v or "ELECTROCOM" in v): return True
+        if "PLC" in f and ("PLC" in v or "PLACA CENTRO" in v): return True
+        if "MCT" in f and "MCT" in v: return True
+        return f == v
+
+    def coincidencia_sexo(valor_db, filtro):
+        v = str(valor_db).upper()
+        f = str(filtro).upper()
+        if f == "AMBOS": return True
+        if f == "MASCULINO" and ("MASC" in v or v == "M"): return True
+        if f == "FEMENINO" and ("FEM" in v or v == "F"): return True
+        return f == v
+
+    # ==========================================
+    # 3. CARGA Y FILTRADO CRUZADO
+    # ==========================================
     df_personal = obtener_datos_nube("personal")
     total_trabajadores, hombres, mujeres = 0, 0, 0
     
     if not df_personal.empty:
         df_personal.columns = [str(c).strip().upper() for c in df_personal.columns]
         
-        # Filtro Base: Solo Activos y Excluir Sucursal de Pruebas
+        # Excluir inactivos y sucursal de pruebas
         if 'ESTADO' in df_personal.columns:
-            df_personal = df_personal[df_personal['ESTADO'].astype(str).str.upper() == 'ACTIVO']
+            df_personal = df_personal[df_personal['ESTADO'].astype(str).str.upper() != 'FINIQUITADO']
         if 'SUCURSAL' in df_personal.columns:
-            df_personal = df_personal[df_personal['SUCURSAL'].astype(str).str.upper() != 'PREVENCION (PRUEBAS)']
+            df_personal = df_personal[~df_personal['SUCURSAL'].astype(str).str.upper().str.contains('PRUEBAS')]
 
-        # 1er Filtro Cruzado: Sucursal
-        if filtro_sucursal != "Todas" and 'SUCURSAL' in df_personal.columns:
-            df_personal = df_personal[df_personal['SUCURSAL'].astype(str).str.upper() == filtro_sucursal.upper()]
+        # Filtro Sucursal
+        if 'SUCURSAL' in df_personal.columns:
+            df_personal = df_personal[df_personal['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
             
         # Conteo de Sexo Total en esa sucursal
         if 'SEXO' in df_personal.columns:
-            hombres = len(df_personal[df_personal['SEXO'].astype(str).str.upper() == 'MASCULINO'])
-            mujeres = len(df_personal[df_personal['SEXO'].astype(str).str.upper() == 'FEMENINO'])
+            hombres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "MASCULINO"))])
+            mujeres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "FEMENINO"))])
             
-            # 2do Filtro Cruzado: Sexo (Reduce la dotación para el cálculo de tasas)
-            if filtro_sexo != "Ambos":
-                df_personal = df_personal[df_personal['SEXO'].astype(str).str.upper() == filtro_sexo.upper()]
+            # Filtro Sexo
+            df_personal = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
-        total_trabajadores = len(df_personal) # Dotación Real Filtrada
+        total_trabajadores = len(df_personal)
 
-    # B. Procesar Accidentes Reales (Sincronizados de Mutual)
+    # Procesar Accidentes
     df_acc = obtener_datos_nube("accidentes")
-    
     if not df_acc.empty:
         df_acc.columns = [str(c).strip().upper() for c in df_acc.columns]
         
-        # Filtro Base: Eliminar accidentes inhabilitados (Modo Auditoría)
         if 'ESTADO_REGISTRO' in df_acc.columns:
             df_acc = df_acc[df_acc['ESTADO_REGISTRO'].astype(str).str.upper() != 'INHABILITADO']
 
-        # Filtro de Año y Mes (2026+)
         if 'FECHA' in df_acc.columns:
             df_acc['FECHA'] = pd.to_datetime(df_acc['FECHA'], errors='coerce')
             df_acc = df_acc[df_acc['FECHA'].dt.year == filtro_ano] 
             meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
             df_acc['MES_TXT'] = df_acc['FECHA'].dt.month.map(meses_map)
 
-        # Filtro Cruzado: Sucursal en Accidentes
-        if filtro_sucursal != "Todas" and 'SUCURSAL' in df_acc.columns:
-            df_acc = df_acc[df_acc['SUCURSAL'].astype(str).str.upper() == filtro_sucursal.upper()]
+        if 'SUCURSAL' in df_acc.columns:
+            df_acc = df_acc[df_acc['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
 
-        # Filtro Cruzado: Sexo (Solo deja los accidentes de los trabajadores que pasaron el filtro de personal)
         if filtro_sexo != "Ambos" and not df_personal.empty and 'NOMBRE' in df_personal.columns:
             nombres_validos = df_personal['NOMBRE'].str.upper().tolist()
             if 'TRABAJADOR' in df_acc.columns:
                 df_acc = df_acc[df_acc['TRABAJADOR'].astype(str).str.upper().isin(nombres_validos)]
 
     # ==========================================
-    # 3. TARJETAS DE RESUMEN
+    # 4. TARJETAS DE RESUMEN
     # ==========================================
     t1, t2, t3 = st.columns(3)
     with t1:
-        st.info(f"**DOTACIÓN FILTRADA (Base Cálculo)**\n### {total_trabajadores}")
+        st.info(f"**DOTACIÓN ACTUAL FILTRADA**\n### {total_trabajadores}")
     with t2:
         st.success(f"**HOMBRES (En Filtro)**\n### {hombres if filtro_sexo in ['Ambos', 'MASCULINO'] else 0}")
     with t3:
@@ -118,17 +131,63 @@ def mostrar_modulo_estadisticas():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    # 4. TABLA Y CÁLCULOS MENSUALES
+    # 5. AJUSTE MANUAL DE DOTACIÓN MENSUAL (HISTORIAL)
+    # ==========================================
+    st.markdown("### ⚙️ Ajuste de Historial de Dotación")
+    with st.expander("📝 Editar Promedio de Trabajadores por Mes"):
+        st.info("Ingresa los promedios manuales aquí. El sistema dará prioridad a estos números para el cálculo de tasas del mes correspondiente.")
+        
+        # Intentamos obtener la configuración, si no existe o hay error, creamos un DataFrame vacío
+        try:
+            df_cfg = obtener_datos_nube("config_mensual")
+            if df_cfg is None or df_cfg.empty:
+                df_cfg = pd.DataFrame(columns=["AÑO", "MES", "SUCURSAL", "TRABAJADORES"])
+        except:
+            df_cfg = pd.DataFrame(columns=["AÑO", "MES", "SUCURSAL", "TRABAJADORES"])
+            
+        df_cfg.columns = [str(c).strip().upper() for c in df_cfg.columns]
+        
+        df_cfg_editado = st.data_editor(
+            df_cfg,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "AÑO": st.column_config.NumberColumn("Año", format="%d"),
+                "MES": st.column_config.SelectboxColumn("Mes", options=lista_meses_completos),
+                "SUCURSAL": st.column_config.SelectboxColumn("Sucursal", options=["Todas", "ECOM VALDIVIA", "MCT VALDIVIA", "PLC VALDIVIA"]),
+                "TRABAJADORES": st.column_config.NumberColumn("N° Promedio Trabajadores", min_value=0, step=1)
+            },
+            key="editor_config_mensual"
+        )
+        
+        if st.button("💾 Guardar Ajustes Mensuales", type="primary"):
+            if actualizar_hoja_completa(df_cfg_editado, "config_mensual"):
+                st.success("✅ Historial actualizado. Recargando panel...")
+                st.rerun()
+
+    # ==========================================
+    # 6. TABLA Y CÁLCULOS MENSUALES
     # ==========================================
     filas_tabla = []
-    # Calculamos hasta el mes actual
     meses_transcurridos = mes_actual if filtro_ano == ano_actual else 12
 
     for i, mes in enumerate(lista_meses_completos):
         idx_mes = i + 1
+        x_trab = total_trabajadores # Por defecto usa la foto actual
         
-        # Usamos la dotación cruzada (sucursal + sexo)
-        x_trab = total_trabajadores 
+        # BÚSQUEDA DE HISTORIAL: Si escribiste un promedio en la tabla de arriba, lo usa.
+        if not df_cfg_editado.empty:
+            mask = (
+                (df_cfg_editado['AÑO'].astype(str) == str(filtro_ano)) &
+                (df_cfg_editado['MES'].astype(str).str.upper() == mes.upper()) &
+                (df_cfg_editado['SUCURSAL'].astype(str).str.upper() == filtro_sucursal.upper())
+            )
+            match = df_cfg_editado[mask]
+            if not match.empty:
+                try:
+                    x_trab = int(pd.to_numeric(match.iloc[-1]['TRABAJADORES'], errors='coerce'))
+                except:
+                    pass
 
         x_trab = 0 if idx_mes > meses_transcurridos else x_trab
         hh = 0 if idx_mes > meses_transcurridos else calcular_hh_estimadas(x_trab, mes)
@@ -166,7 +225,7 @@ def mostrar_modulo_estadisticas():
     df_tabla = pd.DataFrame(filas_tabla)
 
     # ==========================================
-    # 5. ZONA CENTRAL: VISUALIZACIÓN
+    # 7. ZONA CENTRAL: VISUALIZACIÓN
     # ==========================================
     col_tabla, col_analisis = st.columns([6, 4]) 
 
@@ -209,9 +268,13 @@ def mostrar_modulo_estadisticas():
             st.markdown("##### Proyección anual (Datos Reales)")
             mes_corte_texto = lista_meses_completos[meses_transcurridos-1] if meses_transcurridos > 0 else "N/A"
             
-            mes_critico_idx = df_tabla['DP'].idxmax()
-            mes_critico_nombre = df_tabla.loc[mes_critico_idx, 'MES']
-            mes_critico_dp = df_tabla.loc[mes_critico_idx, 'DP']
+            if df_tabla['DP'].sum() > 0:
+                mes_critico_idx = df_tabla['DP'].idxmax()
+                mes_critico_nombre = df_tabla.loc[mes_critico_idx, 'MES']
+                mes_critico_dp = df_tabla.loc[mes_critico_idx, 'DP']
+            else:
+                mes_critico_nombre = "Ninguno"
+                mes_critico_dp = 0
             
             promedio_dias_acc = (total_dp / total_ctp) if total_ctp > 0 else 0
             
@@ -236,7 +299,7 @@ def mostrar_modulo_estadisticas():
             """)
 
     # ==========================================
-    # 6. GRÁFICOS DE MESES ACTIVOS
+    # 8. GRÁFICOS DE MESES ACTIVOS
     # ==========================================
     st.markdown("<br>", unsafe_allow_html=True)
     g1, g2 = st.columns(2)
@@ -256,42 +319,27 @@ def mostrar_modulo_estadisticas():
             st.line_chart(df_graficos['DP'], color="#ffa726") 
 
     # ==========================================
-    # 7. NUEVO: TABLA RESUMEN DE ACCIDENTES (EXPEDIENTE)
+    # 9. TABLA RESUMEN DE ACCIDENTES (EXPEDIENTE)
     # ==========================================
     st.markdown("---")
     st.markdown("### 📋 Listado Oficial de Accidentes Registrados")
-    st.info("💡 Este listado responde a los filtros aplicados arriba. Presiona 'Ver Expediente' para cargar la DIAT o la Investigación (Configurable en módulo de Accidentes).")
+    st.info("💡 Este listado responde a los filtros aplicados arriba.")
     
     if not df_acc.empty:
-        # Filtramos qué columnas mostrar para que no se vea desordenado
         columnas_deseadas = ['FECHA', 'TRABAJADOR', 'SUCURSAL', 'TIPO', 'DIAS_PERDIDOS', 'ESTADO_REGISTRO']
         columnas_existentes = [col for col in columnas_deseadas if col in df_acc.columns]
-        
-        # Mostramos la tabla formateada
-        st.dataframe(
-            df_acc[columnas_existentes],
-            use_container_width=True, 
-            hide_index=True
-        )
+        st.dataframe(df_acc[columnas_existentes], use_container_width=True, hide_index=True)
     else:
-        st.success("✅ No hay accidentes registrados para los filtros seleccionados (Sucursal/Sexo).")
+        st.success("✅ No hay accidentes registrados para los filtros seleccionados.")
 
     # ==========================================
-    # 8. BOTONES DE ACCIÓN (EXPORTAR PDF)
+    # 10. BOTONES DE ACCIÓN (EXPORTAR PDF)
     # ==========================================
     st.markdown("---")
     b1, b2, b3 = st.columns([2, 2, 6])
     
-    # Botón mágico para PDF (Ahora usa el CSS oculto para imprimir limpio)
     if b1.button("📄 Imprimir / PDF Oficial", type="primary", use_container_width=True):
-        components.html(
-            """
-            <script>
-            window.parent.print();
-            </script>
-            """,
-            height=0
-        )
+        components.html("<script>window.parent.print();</script>", height=0)
         
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
