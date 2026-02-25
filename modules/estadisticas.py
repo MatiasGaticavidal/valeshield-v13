@@ -42,7 +42,7 @@ def mostrar_modulo_estadisticas():
         c_btn2.button("Limpiar Filtros", use_container_width=True)
 
     # ==========================================
-    # 2. FUNCIONES DE LIMPIEZA EXTREMA (REGEX)
+    # 2. FUNCIONES DE LIMPIEZA EXTREMA
     # ==========================================
     def coincidencia_sucursal(valor_db, filtro):
         v = str(valor_db).upper().strip()
@@ -63,28 +63,29 @@ def mostrar_modulo_estadisticas():
 
     def parsear_fecha_invencible(val):
         """ Extrae solo la fecha pura, ignorando horas pegadas como 04-02-202600:00 """
-        if pd.isna(val) or str(val).strip() in ["", "NAN", "NAT"]: 
+        try:
+            if pd.isna(val) or str(val).strip() in ["", "NAN", "NAT"]: 
+                return pd.NaT
+            val_str = str(val).strip()
+            
+            # Si es un número de serie de Excel (ej: 45366)
+            if val_str.replace('.', '', 1).isdigit() and float(val_str) > 10000:
+                return pd.to_datetime('1899-12-30') + pd.to_timedelta(float(val_str), unit='D')
+                
+            # Láser Regex: Busca un patrón de fecha DD-MM-YYYY o YYYY-MM-DD
+            match = re.search(r'(\d{2,4}[-/]\d{1,2}[-/]\d{2,4})', val_str)
+            if match:
+                clean_date = match.group(1)
+                return pd.to_datetime(clean_date, dayfirst=True, errors='coerce')
+                
+            return pd.to_datetime(val_str, dayfirst=True, errors='coerce')
+        except:
             return pd.NaT
-        val_str = str(val).strip()
-        
-        # Si es un número de serie de Excel
-        if val_str.replace('.', '', 1).isdigit() and float(val_str) > 10000:
-            return pd.to_datetime('1899-12-30') + pd.to_timedelta(float(val_str), unit='D')
-            
-        # Láser Regex: Busca un patrón de fecha DD-MM-YYYY o YYYY-MM-DD
-        match = re.search(r'(\d{2,4}[-/]\d{1,2}[-/]\d{2,4})', val_str)
-        if match:
-            clean_date = match.group(1)
-            return pd.to_datetime(clean_date, dayfirst=True, errors='coerce')
-            
-        return pd.to_datetime(val_str, dayfirst=True, errors='coerce')
 
     def encontrar_columna(df, opciones):
-        # Búsqueda exacta
         for op in opciones:
             for col in df.columns:
                 if str(col).strip().upper() == op: return col
-        # Búsqueda parcial si falla la exacta
         for op in opciones:
             for col in df.columns:
                 if op in str(col).strip().upper(): return col
@@ -120,6 +121,7 @@ def mostrar_modulo_estadisticas():
     df_acc = df_acc_completo.copy() if not df_acc_completo.empty else pd.DataFrame()
     
     if not df_acc.empty:
+        df_acc.columns = [str(c).strip().upper() for c in df_acc.columns]
         df_acc['IDX_ORIGINAL'] = df_acc.index 
         
         # Encontrar columnas clave usando Inteligencia
@@ -130,21 +132,22 @@ def mostrar_modulo_estadisticas():
         col_suc = encontrar_columna(df_acc, ['SUCURSAL', 'CENTRO', 'FAENA'])
         col_sex = encontrar_columna(df_acc, ['SEXO', 'GENERO'])
 
-        # Normalizar Datos en columnas seguras
+        # EL CORTOCIRCUITO ESTABA AQUÍ: Faltaba el .str antes del .upper()
         df_acc['FECHA_NORM'] = df_acc[col_fecha] if col_fecha else pd.NaT
         df_acc['TRABAJADOR_NORM'] = df_acc[col_trab].astype(str) if col_trab else "DESCONOCIDO"
-        df_acc['TIPO_NORM'] = df_acc[col_tipo].astype(str).upper() if col_tipo else "ACCIDENTE"
+        df_acc['TIPO_NORM'] = df_acc[col_tipo].astype(str).str.upper() if col_tipo else "ACCIDENTE"
         df_acc['DIAS_NORM'] = pd.to_numeric(df_acc[col_dias], errors='coerce').fillna(0) if col_dias else 0
-        df_acc['SUC_NORM'] = df_acc[col_suc].astype(str).upper() if col_suc else "S/I"
-        df_acc['SEX_NORM'] = df_acc[col_sex].astype(str).upper() if col_sex else "S/I"
+        df_acc['SUC_NORM'] = df_acc[col_suc].astype(str).str.upper() if col_suc else "S/I"
+        df_acc['SEX_NORM'] = df_acc[col_sex].astype(str).str.upper() if col_sex else "S/I"
 
-        # Eliminar Rechazados o Inhabilitados buscando en cualquier columna
-        df_acc = df_acc[~df_acc.apply(lambda row: row.astype(str).str.upper().str.contains('RECHAZADO|INHABILITADO').any(), axis=1)]
+        # Eliminar Rechazados o Inhabilitados buscando de forma segura en toda la fila
+        mask_valido = ~df_acc.astype(str).apply(lambda row: row.str.upper().str.contains('RECHAZADO|INHABILITADO')).any(axis=1)
+        df_acc = df_acc[mask_valido]
 
         # Limpiar Fecha Invencible
         df_acc['FECHA_DT'] = df_acc['FECHA_NORM'].apply(parsear_fecha_invencible)
         
-        # Filtrar Año 2026 (y guardamos los que no tengan fecha para diagnosticarlos abajo)
+        # Filtrar Año (y guardamos los que no tengan fecha para diagnosticarlos abajo)
         df_acc = df_acc[(df_acc['FECHA_DT'].dt.year == filtro_ano) | (df_acc['FECHA_DT'].isna())]
         
         meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
@@ -231,12 +234,12 @@ def mostrar_modulo_estadisticas():
                 tipo_str = str(acc_row['TIPO_NORM']).upper()
                 dias_perdidos = float(acc_row['DIAS_NORM'])
                 
-                # Clasificación Quirúrgica
+                # Clasificación Quirúrgica para Estadísticas Legales
                 if "TRAYECTO" in tipo_str:
                     acc_tray += 1
                     dp += dias_perdidos
                 elif "ENFERMEDAD" in tipo_str or "EP" in tipo_str:
-                    pass # Enfermedades van por otro carril, no suman a Tasa CTP
+                    pass # Enfermedades no suman a Tasa CTP
                 else:
                     if dias_perdidos > 0 or "CTP" in tipo_str or "CON TIEMPO" in tipo_str:
                         acc_ctp += 1
@@ -341,6 +344,12 @@ def mostrar_modulo_estadisticas():
                     c2.success("✅ Investigación Registrada"); c2.markdown(f"[📥 Descargar]({url_inv})")
     else:
         st.warning("⚠️ No hay accidentes procesados para el filtro actual.")
+        
+    # Diagnóstico Crudo (Visible si hay datos en la nube pero no pasaron los filtros)
+    if df_acc.empty and not df_acc_completo.empty:
+        with st.expander("🚨 ALERTA: Ver Excel Original (Modo Diagnóstico)"):
+            st.error("Hay datos en la Nube, pero fueron ocultados por los filtros. Revisa si la columna 'ESTADO_REGISTRO' dice RECHAZADO.")
+            st.dataframe(df_acc_completo)
 
     # ==========================================
     # 10. BOTONES DE ACCIÓN (EXPORTAR PDF)
