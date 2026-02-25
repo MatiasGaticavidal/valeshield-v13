@@ -24,7 +24,6 @@ def mostrar_modulo_estadisticas():
     mes_actual = datetime.now().month
     lista_meses_completos = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
     
-    # Filtro Dinámico de Meses: Solo muestra hasta el mes actual
     lista_meses_permitidos = lista_meses_completos[:mes_actual]
 
     # ==========================================
@@ -75,43 +74,56 @@ def mostrar_modulo_estadisticas():
     if not df_personal.empty:
         df_personal.columns = [str(c).strip().upper() for c in df_personal.columns]
         
-        # Excluir inactivos y sucursal de pruebas
         if 'ESTADO' in df_personal.columns:
             df_personal = df_personal[df_personal['ESTADO'].astype(str).str.upper() != 'FINIQUITADO']
         if 'SUCURSAL' in df_personal.columns:
             df_personal = df_personal[~df_personal['SUCURSAL'].astype(str).str.upper().str.contains('PRUEBAS')]
 
-        # Filtro Sucursal
         if 'SUCURSAL' in df_personal.columns:
             df_personal = df_personal[df_personal['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
             
-        # Conteo de Sexo Total en esa sucursal
         if 'SEXO' in df_personal.columns:
             hombres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "MASCULINO"))])
             mujeres = len(df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, "FEMENINO"))])
-            
-            # Filtro Sexo
             df_personal = df_personal[df_personal['SEXO'].apply(lambda x: coincidencia_sexo(x, filtro_sexo))]
 
         total_trabajadores = len(df_personal)
 
-    # Procesar Accidentes
+    # --- PROCESAR ACCIDENTES (CON TRADUCTOR MUTUAL) ---
     df_acc = obtener_datos_nube("accidentes")
     if not df_acc.empty:
         df_acc.columns = [str(c).strip().upper() for c in df_acc.columns]
         
+        # 1. TRADUCTOR DE COLUMNAS MUTUAL: Estandariza los nombres de columnas
+        mapa_columnas = {
+            'FECHA ACCIDENTE': 'FECHA',
+            'FECHA SINIESTRO': 'FECHA',
+            'NOMBRE TRABAJADOR': 'TRABAJADOR',
+            'NOMBRES': 'TRABAJADOR',
+            'CLASIFICACION': 'TIPO',
+            'TIPO ACCIDENTE': 'TIPO',
+            'DIAS PERDIDOS': 'DIAS_PERDIDOS',
+            'DÍAS REPOSO': 'DIAS_PERDIDOS'
+        }
+        df_acc = df_acc.rename(columns=mapa_columnas)
+        
+        # Filtro de Inhabilitados
         if 'ESTADO_REGISTRO' in df_acc.columns:
             df_acc = df_acc[df_acc['ESTADO_REGISTRO'].astype(str).str.upper() != 'INHABILITADO']
 
+        # 2. MANEJO DE FECHAS CHILENAS (DD-MM-YYYY)
         if 'FECHA' in df_acc.columns:
-            df_acc['FECHA'] = pd.to_datetime(df_acc['FECHA'], errors='coerce')
+            # dayfirst=True asegura que lea 10-02 como 10 de Febrero, no 2 de Octubre
+            df_acc['FECHA'] = pd.to_datetime(df_acc['FECHA'], errors='coerce', dayfirst=True)
             df_acc = df_acc[df_acc['FECHA'].dt.year == filtro_ano] 
             meses_map = {i+1: m for i, m in enumerate(lista_meses_completos)}
             df_acc['MES_TXT'] = df_acc['FECHA'].dt.month.map(meses_map)
 
+        # Filtro Sucursal
         if 'SUCURSAL' in df_acc.columns:
             df_acc = df_acc[df_acc['SUCURSAL'].apply(lambda x: coincidencia_sucursal(x, filtro_sucursal))]
 
+        # Filtro de Sexo Cruzado con Nómina Maestra
         if filtro_sexo != "Ambos" and not df_personal.empty and 'NOMBRE' in df_personal.columns:
             nombres_validos = df_personal['NOMBRE'].str.upper().tolist()
             if 'TRABAJADOR' in df_acc.columns:
@@ -135,9 +147,7 @@ def mostrar_modulo_estadisticas():
     # ==========================================
     st.markdown("### ⚙️ Ajuste de Historial de Dotación")
     with st.expander("📝 Editar Promedio de Trabajadores por Mes"):
-        st.info("Ingresa los promedios manuales aquí. El sistema dará prioridad a estos números para el cálculo de tasas del mes correspondiente.")
-        
-        # Intentamos obtener la configuración, si no existe o hay error, creamos un DataFrame vacío
+        st.info("Ingresa los promedios manuales aquí. El sistema dará prioridad a estos números para el cálculo de tasas.")
         try:
             df_cfg = obtener_datos_nube("config_mensual")
             if df_cfg is None or df_cfg.empty:
@@ -173,9 +183,8 @@ def mostrar_modulo_estadisticas():
 
     for i, mes in enumerate(lista_meses_completos):
         idx_mes = i + 1
-        x_trab = total_trabajadores # Por defecto usa la foto actual
+        x_trab = total_trabajadores 
         
-        # BÚSQUEDA DE HISTORIAL: Si escribiste un promedio en la tabla de arriba, lo usa.
         if not df_cfg_editado.empty:
             mask = (
                 (df_cfg_editado['AÑO'].astype(str) == str(filtro_ano)) &
@@ -184,10 +193,8 @@ def mostrar_modulo_estadisticas():
             )
             match = df_cfg_editado[mask]
             if not match.empty:
-                try:
-                    x_trab = int(pd.to_numeric(match.iloc[-1]['TRABAJADORES'], errors='coerce'))
-                except:
-                    pass
+                try: x_trab = int(pd.to_numeric(match.iloc[-1]['TRABAJADORES'], errors='coerce'))
+                except: pass
 
         x_trab = 0 if idx_mes > meses_transcurridos else x_trab
         hh = 0 if idx_mes > meses_transcurridos else calcular_hh_estimadas(x_trab, mes)
@@ -196,14 +203,16 @@ def mostrar_modulo_estadisticas():
         if not df_acc.empty and 'MES_TXT' in df_acc.columns:
             datos_mes = df_acc[df_acc['MES_TXT'] == mes]
             
+            # 3. TRADUCTOR DE TIPOS DE ACCIDENTE (Detecta jerga de mutual)
             if 'TIPO' in datos_mes.columns:
-                acc_ctp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("CTP", case=False, na=False)])
-                acc_stp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("STP|INCIDENTE", case=False, na=False)])
+                acc_ctp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("CTP|CON TIEMPO|REPOSO", case=False, na=False)])
+                acc_stp = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("STP|INCIDENTE|SIN TIEMPO|SIN REPOSO", case=False, na=False)])
                 acc_tray = len(datos_mes[datos_mes['TIPO'].astype(str).str.contains("TRAYECTO", case=False, na=False)])
             
+            # Sumar días buscando cualquier columna que hable de días
             for col in datos_mes.columns:
-                if 'DIAS' in col:
-                    dp = pd.to_numeric(datos_mes[col], errors='coerce').fillna(0).sum()
+                if 'DIAS' in col or 'DÍAS' in col:
+                    dp += pd.to_numeric(datos_mes[col], errors='coerce').fillna(0).sum()
 
         tasa_acc = (acc_ctp / x_trab * 100) if x_trab > 0 else 0
         ind_frec = (acc_ctp / hh * 1000000) if hh > 0 else 0
@@ -326,9 +335,20 @@ def mostrar_modulo_estadisticas():
     st.info("💡 Este listado responde a los filtros aplicados arriba.")
     
     if not df_acc.empty:
-        columnas_deseadas = ['FECHA', 'TRABAJADOR', 'SUCURSAL', 'TIPO', 'DIAS_PERDIDOS', 'ESTADO_REGISTRO']
-        columnas_existentes = [col for col in columnas_deseadas if col in df_acc.columns]
-        st.dataframe(df_acc[columnas_existentes], use_container_width=True, hide_index=True)
+        # Buscamos de forma flexible las columnas para mostrar en la tabla final
+        cols_finales = []
+        for c in ['FECHA', 'TRABAJADOR', 'SUCURSAL', 'TIPO']:
+            if c in df_acc.columns: cols_finales.append(c)
+        for c in df_acc.columns:
+            if 'DIAS' in c or 'DÍAS' in c: cols_finales.append(c)
+        
+        # Eliminar duplicados en la lista de columnas
+        cols_finales = list(dict.fromkeys(cols_finales))
+        
+        if cols_finales:
+            st.dataframe(df_acc[cols_finales], use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(df_acc, use_container_width=True, hide_index=True)
     else:
         st.success("✅ No hay accidentes registrados para los filtros seleccionados.")
 
