@@ -158,7 +158,7 @@ if not st.session_state['logueado']:
         st.markdown("""
             <div style='text-align: center;'>
                 <h1 style='color: #1E3A8A;'>ValeShield</h1>
-                <p style='color: gray;'>Sistema de Gestión de Riesgos v14.0</p>
+                <p style='color: gray;'>Sistema de Gestión de Riesgos v15.2</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -278,5 +278,6 @@ elif opcion == "ShieldSign (Firmas)": mostrar_modulo_firmador(df_personal)
 elif opcion == "Cambiar Clave": mostrar_cambio_clave(st.session_state['usuario_rut'])
 elif opcion == "Solicitar Ayuda": mostrar_modulo_soporte(st.session_state['usuario_nombre'], st.session_state['usuario_rol'])
 elif opcion == "Gestión Usuarios": mostrar_modulo_usuarios()
+
 
 
