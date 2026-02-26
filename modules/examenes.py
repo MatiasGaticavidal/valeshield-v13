@@ -19,55 +19,57 @@ def extraer_texto_pdf(archivo_pdf):
     return texto
 
 def analizar_pdf_mutual(texto_pdf):
-    # Limpiamos caracteres extraños que ensucian el texto del PDF
+    # Limpieza previa para no confundir el formato JSON
     texto_input = texto_pdf.replace('"', '').replace("'", "")
     
     prompt = f"""
     ERES UN ASISTENTE EXPERTO EN PREVENCIÓN DE RIESGOS.
-    Analiza el siguiente texto de un examen de la Mutual de Seguridad:
+    Analiza este texto de un examen de la Mutual de Seguridad:
     
     TEXTO:
     {texto_input}
     
-    INSTRUCCIONES CRÍTICAS:
-    1. Busca el nombre después de 'Trabajador(a) :'.
-    2. Busca el RUT después de 'RU-'.
-    3. Busca la fecha después de 'Vigencia Hasta'. Ignora si hay dos puntos al final como '2027:'.
-    4. El formato de fecha DEBE ser YYYY-MM-DD.
-    5. Si dice 'no evidencia alteraciones que impidan', la condicion es 'APTO'.
+    INSTRUCCIONES:
+    1. Extrae el Nombre del trabajador.
+    2. Extrae el RUT (está después de 'RU-').
+    3. Extrae la Vigencia (está después de 'Vigencia Hasta'). 
+       IMPORTANTE: Si la fecha tiene dos puntos al final como '16.02.2027:', ignora los puntos.
+    4. Formato de fecha: YYYY-MM-DD.
+    5. Condicion: 'APTO' o 'NO APTO'.
     
-    Responde ÚNICAMENTE un JSON puro, sin bloques de código ```, con esta estructura:
+    Responde ÚNICAMENTE en este formato JSON:
     {{
-      "nombre": "NOMBRE COMPLETO",
+      "nombre": "NOMBRE",
       "rut": "RUT",
       "sucursal": "ECOM o MCT o PLC",
       "cargo": "CARGO",
       "vigencia": "YYYY-MM-DD",
-      "condicion": "APTO o NO APTO"
+      "condicion": "APTO"
     }}
     """
     
     for intento in range(3):
         try:
-            modelo = genai.GenerativeModel('gemini-1.5-flash') # Usamos 1.5-flash por estabilidad
+            # CAMBIO CLAVE: Usamos 'gemini-pro' que es el nombre más compatible
+            modelo = genai.GenerativeModel('gemini-pro') 
             respuesta = modelo.generate_content(prompt)
             
-            # Limpieza extrema de la respuesta para asegurar JSON puro
-            limpio = respuesta.text.strip()
-            if "{" in limpio:
-                limpio = limpio[limpio.find("{"):limpio.rfind("}")+1]
+            # Limpiamos posibles caracteres de formato que Gemini a veces añade
+            res_text = respuesta.text.strip()
+            if "{" in res_text:
+                res_text = res_text[res_text.find("{"):res_text.rfind("}")+1]
             
-            datos = json.loads(limpio)
+            datos = json.loads(res_text)
             
-            # Limpieza manual de la fecha por si la IA dejó el ":"
+            # Limpieza de seguridad para la fecha de Juan Zapata
             if 'vigencia' in datos:
-                datos['vigencia'] = datos['vigencia'].replace(':', '').strip()
+                datos['vigencia'] = datos['vigencia'].split(':')[0].strip()
                 
             return datos
         except Exception as e:
             if intento == 2:
                 st.error(f"Error técnico en IA: {e}")
-            time.sleep(1)
+            time.sleep(2)
     return None
 
 # --- 2. LÓGICA DE SEMAFORIZACIÓN ---
@@ -287,4 +289,5 @@ def mostrar_modulo_examenes():
                 st.dataframe(df_all[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
         st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' o en tu archivo CSV.")
+
 
