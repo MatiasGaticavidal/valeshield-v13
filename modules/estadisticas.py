@@ -7,15 +7,33 @@ import re
 from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
-    # --- CSS PARA IMPRESIÓN LIMPIA DE PDF ---
+    # --- CSS AVANZADO PARA IMPRESIÓN LIMPIA DE PDF ---
     st.markdown("""
         <style>
         @media print {
+            /* 1. Ocultar menús y botones de software */
             section[data-testid="stSidebar"] { display: none !important; }
             header[data-testid="stHeader"] { display: none !important; }
-            .stApp { margin-top: -50px !important; }
             button { display: none !important; }
-            div[data-testid="stExpander"] { display: none !important; }
+            .stApp { margin-top: -30px !important; }
+            
+            /* 2. Ocultar el panel superior de filtros para que el PDF se vea como un reporte cerrado */
+            div[data-testid="stForm"], div[data-testid="stExpander"]:first-of-type { display: none !important; }
+            
+            /* 3. Arreglar el "Choque" de columnas aplastadas */
+            div[data-testid="stHorizontalBlock"] { 
+                display: flex !important; 
+                flex-wrap: wrap !important; 
+            }
+            div[data-testid="column"] { 
+                min-width: 200px !important; 
+                margin-bottom: 15px !important;
+            }
+            
+            /* 4. Evitar que las tablas se partan por la mitad entre la página 1 y 2 */
+            div[data-testid="stDataFrame"], div[data-testid="stMetric"] { 
+                page-break-inside: avoid !important; 
+            }
         }
         </style>
     """, unsafe_allow_html=True)
@@ -379,5 +397,6 @@ def mostrar_modulo_estadisticas():
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
         st.rerun()
+
 
 
