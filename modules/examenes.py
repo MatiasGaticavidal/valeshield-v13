@@ -19,45 +19,56 @@ def extraer_texto_pdf(archivo_pdf):
     return texto
 
 def analizar_pdf_mutual(texto_pdf):
+    # Limpiamos caracteres extraños que ensucian el texto del PDF
+    texto_input = texto_pdf.replace('"', '').replace("'", "")
+    
     prompt = f"""
     ERES UN ASISTENTE EXPERTO EN PREVENCIÓN DE RIESGOS.
-    Analiza el siguiente texto extraído de un Informe de Evaluación Ocupacional de la Mutual de Seguridad:
+    Analiza el siguiente texto de un examen de la Mutual de Seguridad:
     
-    TEXTO DEL PDF:
-    {texto_pdf}
+    TEXTO:
+    {texto_input}
     
-    Extrae la siguiente información y responde ÚNICAMENTE en formato JSON:
-    1. "nombre": Nombre completo del trabajador.
-    2. "rut": RUT del trabajador.
-    3. "sucursal": Identifica si pertenece a "Electrocom", "Placa Centro" o "MCT".
-    4. "cargo": Cargo evaluado (ej. Operario Bodega, Conductor, etc.).
-    5. "vigencia": La fecha exacta del campo "Vigencia Hasta" en formato YYYY-MM-DD. Si no hay, pon "N/A".
-    6. "condicion": Si el texto dice "no evidencia alteraciones que impidan", pon "APTO". Si dice "evidencia alteraciones que contraindican" o similar, pon "NO APTO".
+    INSTRUCCIONES CRÍTICAS:
+    1. Busca el nombre después de 'Trabajador(a) :'.
+    2. Busca el RUT después de 'RU-'.
+    3. Busca la fecha después de 'Vigencia Hasta'. Ignora si hay dos puntos al final como '2027:'.
+    4. El formato de fecha DEBE ser YYYY-MM-DD.
+    5. Si dice 'no evidencia alteraciones que impidan', la condicion es 'APTO'.
     
-    FORMATO ESPERADO:
+    Responde ÚNICAMENTE un JSON puro, sin bloques de código ```, con esta estructura:
     {{
-      "nombre": "Juan Perez",
-      "rut": "12345678-9",
-      "sucursal": "MCT",
-      "cargo": "Operador Grúa",
-      "vigencia": "2027-10-21",
-      "condicion": "APTO"
+      "nombre": "NOMBRE COMPLETO",
+      "rut": "RUT",
+      "sucursal": "ECOM o MCT o PLC",
+      "cargo": "CARGO",
+      "vigencia": "YYYY-MM-DD",
+      "condicion": "APTO o NO APTO"
     }}
     """
     
     for intento in range(3):
         try:
-            modelo = genai.GenerativeModel('gemini-2.5-flash')
+            modelo = genai.GenerativeModel('gemini-1.5-flash') # Usamos 1.5-flash por estabilidad
             respuesta = modelo.generate_content(prompt)
-            txt = re.sub(r'```json\s*|```', '', respuesta.text).strip()
-            return json.loads(txt)
-        except ResourceExhausted:
-            if intento < 2:
-                time.sleep(30)
-            else:
-                return None
+            
+            # Limpieza extrema de la respuesta para asegurar JSON puro
+            limpio = respuesta.text.strip()
+            if "{" in limpio:
+                limpio = limpio[limpio.find("{"):limpio.rfind("}")+1]
+            
+            datos = json.loads(limpio)
+            
+            # Limpieza manual de la fecha por si la IA dejó el ":"
+            if 'vigencia' in datos:
+                datos['vigencia'] = datos['vigencia'].replace(':', '').strip()
+                
+            return datos
         except Exception as e:
-            return None
+            if intento == 2:
+                st.error(f"Error técnico en IA: {e}")
+            time.sleep(1)
+    return None
 
 # --- 2. LÓGICA DE SEMAFORIZACIÓN ---
 def calcular_estado(fecha_vigencia_str, condicion):
@@ -276,3 +287,4 @@ def mostrar_modulo_examenes():
                 st.dataframe(df_all[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
         st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' o en tu archivo CSV.")
+
