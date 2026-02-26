@@ -7,31 +7,31 @@ import re
 from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
-    # --- CSS EXTREMO PARA IMPRESIÓN LIMPIA DE PDF ---
+    # --- CSS DEFINITIVO PARA APILAR COLUMNAS EN PDF ---
     st.markdown("""
         <style>
         @media print {
-            /* 1. Ocultar menú lateral, encabezado de Streamlit y todos los botones */
-            section[data-testid="stSidebar"] { display: none !important; }
-            header[data-testid="stHeader"] { display: none !important; }
-            button { display: none !important; }
-            .stApp { margin-top: -40px !important; }
-            
-            /* 2. Ocultar la barra de filtros superior (es el primer contenedor con borde) */
-            div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type { 
+            /* 1. Ocultar menú lateral, encabezado y botones */
+            section[data-testid="stSidebar"], header[data-testid="stHeader"], button { 
                 display: none !important; 
             }
+            .stApp { margin-top: -40px !important; }
             
-            /* 3. ANTICHOQUE: Obligar a TODAS las columnas a usar el 100% del ancho del papel */
-            div[data-testid="column"] { 
-                width: 100% !important;
-                flex: 0 0 100% !important;
-                min-width: 100% !important;
-                display: block !important;
-                margin-bottom: 1rem !important;
+            /* 2. DESTRUIR EL EFECTO "LADO A LADO" */
+            /* Obliga a todos los contenedores horizontales a volverse verticales */
+            div[data-testid="stHorizontalBlock"] { 
+                flex-direction: column !important; 
+                display: flex !important;
             }
             
-            /* 4. Evitar que las tablas o tarjetas se partan por la mitad al cambiar de página */
+            /* 3. Darle espacio a cada bloque ahora que están apilados */
+            div[data-testid="column"] { 
+                width: 100% !important;
+                max-width: 100% !important;
+                margin-bottom: 30px !important; /* Separación entre la tabla y el resumen */
+            }
+            
+            /* 4. Evitar que las tablas se corten a la mitad en el cambio de página */
             div[data-testid="stDataFrame"], div[data-testid="stMetric"] { 
                 page-break-inside: avoid !important; 
             }
@@ -398,6 +398,7 @@ def mostrar_modulo_estadisticas():
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
         st.rerun()
+
 
 
 
