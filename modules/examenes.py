@@ -19,56 +19,52 @@ def extraer_texto_pdf(archivo_pdf):
     return texto
 
 def analizar_pdf_mutual(texto_pdf):
-    # Limpieza previa para no confundir el formato JSON
-    texto_input = texto_pdf.replace('"', '').replace("'", "")
+    # Limpieza de seguridad para el texto
+    texto_input = texto_pdf.replace('"', '').replace("'", "").replace("\n", " ")
     
     prompt = f"""
-    ERES UN ASISTENTE EXPERTO EN PREVENCIÓN DE RIESGOS.
-    Analiza este texto de un examen de la Mutual de Seguridad:
-    
-    TEXTO:
+    Analiza este texto de un examen médico:
     {texto_input}
     
-    INSTRUCCIONES:
-    1. Extrae el Nombre del trabajador.
-    2. Extrae el RUT (está después de 'RU-').
-    3. Extrae la Vigencia (está después de 'Vigencia Hasta'). 
-       IMPORTANTE: Si la fecha tiene dos puntos al final como '16.02.2027:', ignora los puntos.
-    4. Formato de fecha: YYYY-MM-DD.
-    5. Condicion: 'APTO' o 'NO APTO'.
-    
-    Responde ÚNICAMENTE en este formato JSON:
-    {{
-      "nombre": "NOMBRE",
-      "rut": "RUT",
-      "sucursal": "ECOM o MCT o PLC",
-      "cargo": "CARGO",
-      "vigencia": "YYYY-MM-DD",
-      "condicion": "APTO"
-    }}
+    Extrae estos datos en JSON puro:
+    1. "nombre": Nombre completo.
+    2. "rut": RUT después de 'RU-'.
+    3. "sucursal": 'Electrocom', 'MCT' o 'Placa Centro'.
+    4. "cargo": Cargo mencionado.
+    5. "vigencia": Fecha tras 'Vigencia Hasta' en formato YYYY-MM-DD (Limpia puntos o dos puntos finales).
+    6. "condicion": 'APTO' o 'NO APTO'.
     """
     
+    # Intentamos detectar qué modelo tienes activo en tu cuenta
+    modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    # Priorizamos 1.5-flash, luego 1.0-pro, o el primero que aparezca
+    nombre_modelo = 'models/gemini-1.5-flash' if 'models/gemini-1.5-flash' in modelos_disponibles else modelos_disponibles[0]
+
     for intento in range(3):
         try:
-            # CAMBIO CLAVE: Usamos 'gemini-pro' que es el nombre más compatible
-            modelo = genai.GenerativeModel('gemini-pro') 
+            modelo = genai.GenerativeModel(nombre_modelo)
             respuesta = modelo.generate_content(prompt)
             
-            # Limpiamos posibles caracteres de formato que Gemini a veces añade
+            # Extraer el bloque JSON de la respuesta
             res_text = respuesta.text.strip()
             if "{" in res_text:
                 res_text = res_text[res_text.find("{"):res_text.rfind("}")+1]
             
             datos = json.loads(res_text)
             
-            # Limpieza de seguridad para la fecha de Juan Zapata
-            if 'vigencia' in datos:
-                datos['vigencia'] = datos['vigencia'].split(':')[0].strip()
+            # Limpieza específica para el error de Juan Zapata (16.02.2027:)
+            if 'vigencia' in datos and datos['vigencia']:
+                # Elimina cualquier cosa que no sea número o guion
+                datos['vigencia'] = re.sub(r'[^0-9\-]', '', datos['vigencia'].replace('.', '-'))
+                # Si la IA devolvió DD-MM-YYYY, lo damos vuelta
+                partes = datos['vigencia'].split('-')
+                if len(partes) == 3 and len(partes[0]) == 2:
+                    datos['vigencia'] = f"{partes[2]}-{partes[1]}-{partes[0]}"
                 
             return datos
         except Exception as e:
             if intento == 2:
-                st.error(f"Error técnico en IA: {e}")
+                st.error(f"Error técnico en IA ({nombre_modelo}): {e}")
             time.sleep(2)
     return None
 
@@ -289,5 +285,6 @@ def mostrar_modulo_examenes():
                 st.dataframe(df_all[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
         st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' o en tu archivo CSV.")
+
 
 
