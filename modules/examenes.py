@@ -99,13 +99,38 @@ def mostrar_modulo_examenes():
     st.header("🩺 Control de Exámenes Ocupacionales")
     st.markdown("Plataforma automatizada para el control de vigencias y lectura inteligente de informes Mutual.")
     
-    # --- CARGA INICIAL DESDE TU CSV ---
-    if 'db_examenes' not in st.session_state:
-        ruta_examenes = "base_examenes.csv"
-        if os.path.exists(ruta_examenes):
-            df = pd.read_csv(ruta_examenes, sep=None, engine='python', encoding='latin1')
-            # Renombramos columnas para que coincidan con la lógica de tu uploader
-            df = df.rename(columns={'Tipo_Examen': 'Categoría', 'Vencimiento': 'Vigencia'})
+    # --- CARGA INICIAL DESDE GOOGLE SHEETS (v13.0) ---
+    st.cache_data.clear() # Limpieza obligatoria para ver datos frescos
+    with st.spinner("Conectando a base de datos en la nube..."):
+        try:
+            # Importamos la función desde tu utils.py si no está arriba
+            from utils import obtener_datos_nube 
+            df_nube = obtener_datos_nube("examenes")
+            
+            if not df_nube.empty:
+                # Alineamos los nombres de las columnas del Sheets con tu lógica interna
+                df = df_nube.copy()
+                df = df.rename(columns={
+                    'NOMBRE': 'Nombre', 
+                    'CARGO': 'Cargo', 
+                    'SUCURSAL': 'Sucursal', 
+                    'TIPO_EXAMEN': 'Categoría', 
+                    'VENCIMIENTO': 'Vigencia',
+                    'ESTADO': 'Estado_Original' # Guardamos el original por si acaso
+                })
+                
+                # Calculamos los días por vencer en vivo
+                df['Días por Vencer'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), row['Estado_Original'])[1], axis=1)
+                df['Estado'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), row['Estado_Original'])[0], axis=1)
+                
+                st.session_state.db_examenes = df
+            else:
+                st.session_state.db_examenes = pd.DataFrame(columns=[
+                    'RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Días por Vencer', 'Estado'
+                ])
+        except Exception as e:
+            st.error(f"Error al conectar con la pestaña 'examenes' en Google Sheets: {e}")
+            st.session_state.db_examenes = pd.DataFrame()
             
             # Calculamos los días por vencer para los datos antiguos
             df['Días por Vencer'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), row['Estado'])[1], axis=1)
@@ -214,4 +239,5 @@ def mostrar_modulo_examenes():
             df_all = df.sort_values(by='Días por Vencer', ascending=True)
             st.dataframe(df_all.style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
+
         st.info("La matriz general está vacía. Asegúrate de que base_examenes.csv esté en la carpeta.")
