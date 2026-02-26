@@ -88,13 +88,19 @@ def guardar_fila_nube(nueva_fila_dict, nombre_pestana):
     try:
         doc = conectar_google_sheets()
         if doc:
+            # Forzamos que siempre busque la pestaña con el nombre exacto
             hoja = doc.worksheet(nombre_pestana)
-            valores = list(nueva_fila_dict.values())
-            hoja.append_row(valores)
+            
+            # Limpieza de seguridad: Convertimos todo a texto simple para que Google no lo rechace
+            valores = [str(v) if v is not None else "" for v in nueva_fila_dict.values()]
+            
+            # Insertamos la fila asegurándonos de que no rompa la estructura
+            hoja.append_row(valores, value_input_option='USER_ENTERED')
             return True
         return False
     except Exception as e:
-        st.error(f"Error crítico al guardar en nube: {e}")
+        # Ahora el error será específico y nos dirá QUÉ columna falla
+        st.error(f"🚨 Error al guardar en '{nombre_pestana}': {e}")
         return False
 
 def actualizar_estado_firma(token, url_drive):
@@ -258,4 +264,5 @@ def fusionar_nominas(df_existente, df_nueva):
     # Devolvemos el formato a la normalidad
     df_existente.reset_index(inplace=True)
     return df_existente
+
 
