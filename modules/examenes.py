@@ -19,30 +19,27 @@ def extraer_texto_pdf(archivo_pdf):
     return texto
 
 def analizar_pdf_mutual(texto_pdf):
-    # Limpieza de seguridad para el texto
+    # Limpieza básica del texto para no romper el prompt
     texto_input = texto_pdf.replace('"', '').replace("'", "").replace("\n", " ")
     
     prompt = f"""
-    Analiza este texto de un examen médico:
+    ERES UN ASISTENTE EXPERTO EN PREVENCIÓN DE RIESGOS.
+    Analiza este texto de un examen médico de la Mutual de Seguridad:
     {texto_input}
     
-    Extrae estos datos en JSON puro:
-    1. "nombre": Nombre completo.
-    2. "rut": RUT después de 'RU-'.
-    3. "sucursal": 'Electrocom', 'MCT' o 'Placa Centro'.
-    4. "cargo": Cargo mencionado.
-    5. "vigencia": Fecha tras 'Vigencia Hasta' en formato YYYY-MM-DD (Limpia puntos o dos puntos finales).
-    6. "condicion": 'APTO' o 'NO APTO'.
+    Extrae estos datos y responde ÚNICAMENTE en formato JSON puro:
+    1. "nombre": Nombre completo del trabajador.
+    2. "rut": RUT del trabajador (está después de 'RU-').
+    3. "sucursal": Identifica si es 'Electrocom', 'MCT' o 'Placa Centro'.
+    4. "cargo": Cargo mencionado en el documento.
+    5. "vigencia": Fecha tras 'Vigencia Hasta' en formato YYYY-MM-DD. (Limpia puntos o dos puntos finales).
+    6. "condicion": Si es apto, pon 'APTO'. Si no, 'NO APTO'.
     """
-    
-    # Intentamos detectar qué modelo tienes activo en tu cuenta
-    modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # Priorizamos 1.5-flash, luego 1.0-pro, o el primero que aparezca
-    nombre_modelo = 'models/gemini-1.5-flash' if 'models/gemini-1.5-flash' in modelos_disponibles else modelos_disponibles[0]
 
     for intento in range(3):
         try:
-            modelo = genai.GenerativeModel(nombre_modelo)
+            # USAMOS EL NOMBRE DIRECTO PARA EVITAR EL ERROR DE PERMISOS
+            modelo = genai.GenerativeModel('gemini-1.5-flash')
             respuesta = modelo.generate_content(prompt)
             
             # Extraer el bloque JSON de la respuesta
@@ -52,22 +49,25 @@ def analizar_pdf_mutual(texto_pdf):
             
             datos = json.loads(res_text)
             
-            # Limpieza específica para el error de Juan Zapata (16.02.2027:)
-            if 'vigencia' in datos and datos['vigencia']:
-                # Elimina cualquier cosa que no sea número o guion
-                datos['vigencia'] = re.sub(r'[^0-9\-]', '', datos['vigencia'].replace('.', '-'))
-                # Si la IA devolvió DD-MM-YYYY, lo damos vuelta
-                partes = datos['vigencia'].split('-')
-                if len(partes) == 3 and len(partes[0]) == 2:
-                    datos['vigencia'] = f"{partes[2]}-{partes[1]}-{partes[0]}"
+            # Limpieza automática para el caso de Juan Zapata (16.02.2027:)
+            if 'vigencia' in datos and datos['vigencia'] and datos['vigencia'] != "N/A":
+                # Quitamos puntos y dejamos solo números y guiones
+                fecha_limpia = re.sub(r'[^0-9\-]', '', datos['vigencia'].replace('.', '-'))
+                
+                # Si viene en DD-MM-YYYY lo corregimos a YYYY-MM-DD
+                partes = fecha_limpia.split('-')
+                if len(partes) == 3:
+                    if len(partes[0]) == 2: # Es DD-MM-YYYY
+                        datos['vigencia'] = f"{partes[2]}-{partes[1]}-{partes[0]}"
+                    else:
+                        datos['vigencia'] = fecha_limpia
                 
             return datos
         except Exception as e:
             if intento == 2:
-                st.error(f"Error técnico en IA ({nombre_modelo}): {e}")
+                st.error(f"Error al procesar con IA: Verifique su conexión o API Key.")
             time.sleep(2)
     return None
-
 # --- 2. LÓGICA DE SEMAFORIZACIÓN ---
 def calcular_estado(fecha_vigencia_str, condicion):
     if str(condicion).upper() == "NO APTO":
@@ -285,6 +285,7 @@ def mostrar_modulo_examenes():
                 st.dataframe(df_all[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
         st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' o en tu archivo CSV.")
+
 
 
 
