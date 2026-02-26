@@ -208,30 +208,67 @@ def mostrar_modulo_examenes():
                 
                 st.dataframe(df_cat.style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
 
-# --- NUEVO: GESTOR DE RESPALDOS POR PESTAÑA ---
+# --- NUEVO: GESTOR DE RESPALDOS INTELIGENTE (ACTUALIZA NUBE) ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                with st.expander(f"📎 Adjuntar Respaldo PDF para trabajador en {cat}"):
+                with st.expander(f"📎 Renovar / Adjuntar Respaldo PDF para trabajador en {cat}"):
                     col_sel, col_up = st.columns([1, 1])
                     with col_sel:
                         trabajador = st.selectbox(f"Seleccionar Trabajador:", df_cat['Nombre'].tolist(), key=f"sel_{cat}")
                     with col_up:
-                        pdf_respaldo = st.file_uploader("Subir PDF de Mutual", type=['pdf'], key=f"up_{cat}")
+                        pdf_respaldo = st.file_uploader("Subir NUEVO Informe Mutual (PDF)", type=['pdf'], key=f"up_{cat}")
                     
-                    if st.button("💾 Guardar Evidencia", key=f"btn_{cat}"):
+                    if st.button("💾 Guardar Evidencia y Renovar Fecha", key=f"btn_{cat}", type="primary"):
                         if pdf_respaldo is not None:
-                            # 1. Creamos la carpeta de respaldos si no existe
-                            if not os.path.exists("respaldos_mutual"):
-                                os.makedirs("respaldos_mutual")
-                            
-                            # 2. Obtenemos el RUT para nombrar el archivo correctamente
-                            rut_trabajador = df_cat[df_cat['Nombre'] == trabajador]['RUT'].values[0]
-                            nombre_archivo = f"respaldos_mutual/{rut_trabajador}_Respaldo_{cat}.pdf".replace(" ", "_")
-                            
-                            # 3. Guardamos el PDF físicamente en tu carpeta
-                            with open(nombre_archivo, "wb") as f:
-                                f.write(pdf_respaldo.getbuffer())
-                            
-                            st.success(f"✅ ¡Respaldo guardado correctamente para {trabajador}! Archivo protegido.")
+                            with st.spinner("🤖 Analizando nuevo documento con IA y sincronizando..."):
+                                # 1. Guardado Físico del PDF en tu carpeta
+                                if not os.path.exists("respaldos_mutual"):
+                                    os.makedirs("respaldos_mutual")
+                                rut_trabajador = df_cat[df_cat['Nombre'] == trabajador]['RUT'].values[0]
+                                nombre_archivo = f"respaldos_mutual/{rut_trabajador}_Respaldo_{cat}.pdf".replace(" ", "_")
+                                
+                                with open(nombre_archivo, "wb") as f:
+                                    f.write(pdf_respaldo.getbuffer())
+                                
+                                # 2. Lectura Inteligente con tu motor Gemini
+                                texto_nuevo = extraer_texto_pdf(pdf_respaldo)
+                                datos_nuevos = analizar_pdf_mutual(texto_nuevo)
+                                
+                                if datos_nuevos and datos_nuevos.get('vigencia'):
+                                    estado_semaforo, dias_nuevos = calcular_estado(datos_nuevos['vigencia'], datos_nuevos['condicion'])
+                                    
+                                    # 3. Actualizamos el registro temporal de Streamlit
+                                    idx = st.session_state.db_examenes.index[st.session_state.db_examenes['RUT'] == rut_trabajador].tolist()[0]
+                                    st.session_state.db_examenes.at[idx, 'Vigencia'] = datos_nuevos['vigencia']
+                                    st.session_state.db_examenes.at[idx, 'Estado_Original'] = datos_nuevos.get('condicion', 'APTO')
+                                    st.session_state.db_examenes.at[idx, 'Estado'] = estado_semaforo
+                                    st.session_state.db_examenes.at[idx, 'Días por Vencer'] = dias_nuevos
+                                    
+                                    # 4. TRADUCCIÓN INVERSA PARA GOOGLE SHEETS
+                                    # Preparamos la base de datos con los nombres de columnas exactos que tienes en la nube
+                                    from utils import actualizar_hoja_completa
+                                    df_para_nube = st.session_state.db_examenes.copy()
+                                    df_para_nube = df_para_nube.rename(columns={
+                                        'Nombre': 'NOMBRE', 
+                                        'Cargo': 'CARGO', 
+                                        'Sucursal': 'SUCURSAL', 
+                                        'Categoría': 'TIPO_EXAMEN', 
+                                        'Vigencia': 'VENCIMIENTO',
+                                        'Estado_Original': 'ESTADO'
+                                    })
+                                    
+                                    # Limpiamos las columnas calculadas antes de subir para no ensuciar tu Sheets
+                                    columnas_a_borrar = [col for col in ['Días por Vencer', 'Estado'] if col in df_para_nube.columns]
+                                    df_para_nube = df_para_nube.drop(columns=columnas_a_borrar)
+                                    
+                                    # 5. ¡Inyección Directa a Google Sheets!
+                                    if actualizar_hoja_completa(df_para_nube, "examenes"):
+                                        st.success(f"✅ ¡Éxito! Respaldo guardado y vigencia de {trabajador} renovada hasta {datos_nuevos['vigencia']}.")
+                                        st.balloons()
+                                        st.cache_data.clear() # Limpiamos caché para que el semáforo se actualice al instante
+                                    else:
+                                        st.error("❌ El PDF se analizó, pero hubo un error al guardar en la nube.")
+                                else:
+                                    st.error("⚠️ La IA no pudo extraer la nueva fecha. Verifica el PDF.")
                         else:
                             st.warning("⚠️ Por favor, selecciona un archivo PDF primero.")
                 
@@ -239,5 +276,12 @@ def mostrar_modulo_examenes():
             df_all = df.sort_values(by='Días por Vencer', ascending=True)
             st.dataframe(df_all.style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
+        st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' de Google Sheets.")
+                
+        with tabs[-1]: # La última pestaña es "Ver Todo"
+            df_all = df.sort_values(by='Días por Vencer', ascending=True)
+            st.dataframe(df_all.style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
+    else:
 
         st.info("La matriz general está vacía. Asegúrate de que base_examenes.csv esté en la carpeta.")
+
