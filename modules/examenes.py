@@ -10,7 +10,7 @@ import time
 import google.generativeai as genai
 from utils import obtener_datos_nube, guardar_fila_nube, actualizar_hoja_completa
 
-# --- 1. LÓGICA DE EXTRACCIÓN CON IA (TU CÓDIGO INTACTO) ---
+# --- 1. LÓGICA DE EXTRACCIÓN CON IA (INTACTA) ---
 def extraer_texto_pdf(archivo_pdf):
     lector = PyPDF2.PdfReader(archivo_pdf)
     texto = ""
@@ -66,9 +66,9 @@ def calcular_estado(fecha_vigencia_str, condicion):
     
     try:
         try:
-            vigencia = datetime.strptime(fecha_vigencia_str, '%d-%m-%Y').date()
+            vigencia = datetime.strptime(str(fecha_vigencia_str).strip(), '%d-%m-%Y').date()
         except:
-            vigencia = datetime.strptime(fecha_vigencia_str, '%Y-%m-%d').date()
+            vigencia = datetime.strptime(str(fecha_vigencia_str).strip(), '%Y-%m-%d').date()
             
         hoy = datetime.now().date()
         dias_restantes = (vigencia - hoy).days
@@ -94,37 +94,63 @@ def aplicar_colores(val):
         color = 'background-color: #e2e3e5; color: #383d41;'
     return color
 
+# --- NUEVO: TRADUCTOR UNIVERSAL DE COLUMNAS ---
+def normalizar_columnas(df_crudo):
+    """Obliga a que las columnas se llamen exactamente como las necesita el sistema, sin importar cómo vengan"""
+    df = df_crudo.copy()
+    # Pasamos todo a mayúsculas para que no haya errores de tipeo
+    df.columns = [str(c).upper().strip() for c in df.columns]
+    
+    # Diccionario de traducción (Si encuentra VENCIMIENTO, lo llama Vigencia, etc.)
+    mapeo = {
+        'RUT': 'RUT', 'NOMBRE': 'Nombre', 'CARGO': 'Cargo', 'SUCURSAL': 'Sucursal',
+        'TIPO_EXAMEN': 'Categoría', 'CATEGORIA': 'Categoría', 'CATEGORÍA': 'Categoría',
+        'VENCIMIENTO': 'Vigencia', 'VIGENCIA': 'Vigencia', 'ESTADO': 'Estado_Original'
+    }
+    df = df.rename(columns=mapeo)
+    
+    # Si falta alguna columna vital, la crea en blanco para que no colapse el sistema
+    columnas_vitales = ['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Estado_Original']
+    for col in columnas_vitales:
+        if col not in df.columns:
+            df[col] = "N/A"
+            
+    return df
+
 # --- 3. INTERFAZ DEL MÓDULO ---
 def mostrar_modulo_examenes():
     st.header("🩺 Control de Exámenes Ocupacionales")
     st.markdown("Plataforma automatizada para el control de vigencias y lectura inteligente de informes Mutual.")
     
-    # --- CONEXIÓN A GOOGLE SHEETS ---
-    with st.spinner("Conectando a base de datos..."):
+    # --- CONEXIÓN A DATOS (NUBE + RESPALDO LOCAL CSV) ---
+    with st.spinner("Cargando base de datos de trabajadores..."):
         try:
             df_nube = obtener_datos_nube("examenes")
             if not df_nube.empty:
-                df = df_nube.copy()
-                df = df.rename(columns={
-                    'NOMBRE': 'Nombre', 
-                    'CARGO': 'Cargo', 
-                    'SUCURSAL': 'Sucursal', 
-                    'TIPO_EXAMEN': 'Categoría', 
-                    'VENCIMIENTO': 'Vigencia',
-                    'ESTADO': 'Estado_Original'
-                })
-                df['Días por Vencer'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), row.get('Estado_Original', 'APTO'))[1], axis=1)
-                df['Estado'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), row.get('Estado_Original', 'APTO'))[0], axis=1)
-                st.session_state.db_examenes = df
+                df = normalizar_columnas(df_nube)
             else:
-                st.session_state.db_examenes = pd.DataFrame(columns=['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Días por Vencer', 'Estado', 'Estado_Original'])
+                # SI LA NUBE FALLA O ESTÁ VACÍA, CARGA TU CSV HISTÓRICO SÍ O SÍ
+                ruta_examenes = "base_examenes.csv"
+                if os.path.exists(ruta_examenes):
+                    df_csv = pd.read_csv(ruta_examenes, sep=None, engine='python', encoding='latin1')
+                    df = normalizar_columnas(df_csv)
+                else:
+                    df = pd.DataFrame(columns=['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Estado_Original'])
+            
+            # Recalculamos semáforos en vivo
+            if not df.empty:
+                df['Días por Vencer'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), str(row['Estado_Original']))[1], axis=1)
+                df['Estado'] = df.apply(lambda row: calcular_estado(str(row['Vigencia']), str(row['Estado_Original']))[0], axis=1)
+            
+            st.session_state.db_examenes = df
+            
         except Exception as e:
             st.error(f"Error crítico al cargar datos: {e}")
             st.session_state.db_examenes = pd.DataFrame()
 
-    # --- ¡TU BOTÓN RECUPERADO! PANEL DE INGRESO NUEVO ---
+    # --- BOTÓN PARA AÑADIR NUEVOS TRABAJADORES (RECUPERADO) ---
     with st.expander("➕ Subir Nuevo Examen Ocupacional (Añadir Trabajador)", expanded=False):
-        st.info("Sube el PDF oficial de la Mutual. El sistema extraerá las fechas y lo agregará a la base de datos.")
+        st.info("Sube el PDF oficial de la Mutual. El sistema extraerá las fechas y agregará al trabajador a la base.")
         col1, col2 = st.columns([1, 2])
         
         with col1:
@@ -158,12 +184,12 @@ def mostrar_modulo_examenes():
                             st.success(f"✅ ¡Trabajador {nuevo_registro_nube['NOMBRE']} agregado con éxito!")
                             st.balloons()
                             st.cache_data.clear()
-                            time.sleep(2)
+                            time.sleep(2) # F5 Automático
                             st.rerun()
                         else:
                             st.error("Error al guardar en Google Sheets.")
                     else:
-                        st.error("No se pudo extraer la información.")
+                        st.error("No se pudo extraer la información del PDF.")
 
     st.divider()
 
@@ -174,6 +200,9 @@ def mostrar_modulo_examenes():
         nombres_pestanas = [f"📋 {cat}" for cat in categorias] + ["🌍 Ver Todo"]
         tabs = st.tabs(nombres_pestanas)
         
+        # AQUÍ ESTÁN LAS COLUMNAS EXACTAS QUE SE VAN A MOSTRAR, ASEGURANDO LA VIGENCIA
+        columnas_mostrar = ['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Estado', 'Días por Vencer']
+        
         for i, cat in enumerate(categorias):
             with tabs[i]:
                 df_cat = df[df['Categoría'] == cat].copy()
@@ -183,11 +212,13 @@ def mostrar_modulo_examenes():
                 if vencidos > 0:
                     st.error(f"⚠️ Alerta: Tienes {vencidos} exámenes vencidos en esta categoría.")
                 
-                # MOSTRAR TABLA (Con la columna Vigencia recuperada)
-                columnas_mostrar = ['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Estado', 'Días por Vencer']
-                st.dataframe(df_cat[columnas_mostrar].style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
+                # MOSTRAR TABLA CON FECHA DE VIGENCIA GARANTIZADA
+                try:
+                    st.dataframe(df_cat[columnas_mostrar].style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
+                except AttributeError:
+                    st.dataframe(df_cat[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
 
-                # --- GESTOR DE RESPALDOS (RENOVAR FECHA) ---
+                # --- GESTOR DE RESPALDOS (RENOVAR FECHA PARA TRABAJADORES EXISTENTES) ---
                 st.markdown("<br>", unsafe_allow_html=True)
                 with st.expander(f"📎 Renovar Vigencia PDF para trabajador en {cat}"):
                     col_sel, col_up = st.columns([1, 1])
@@ -216,6 +247,7 @@ def mostrar_modulo_examenes():
                                     df_para_nube.at[idx, 'Vigencia'] = datos_nuevos['vigencia']
                                     df_para_nube.at[idx, 'Estado_Original'] = datos_nuevos.get('condicion', 'APTO')
                                     
+                                    # TRADUCCIÓN INVERSA PARA GOOGLE SHEETS
                                     df_para_nube = df_para_nube.rename(columns={
                                         'Nombre': 'NOMBRE', 'Cargo': 'CARGO', 'Sucursal': 'SUCURSAL', 
                                         'Categoría': 'TIPO_EXAMEN', 'Vigencia': 'VENCIMIENTO', 'Estado_Original': 'ESTADO'
@@ -227,7 +259,7 @@ def mostrar_modulo_examenes():
                                         st.success(f"✅ ¡Vigencia de {trabajador} renovada hasta {datos_nuevos['vigencia']}!")
                                         st.balloons()
                                         st.cache_data.clear()
-                                        time.sleep(2)
+                                        time.sleep(2) # F5 AUTOMÁTICO
                                         st.rerun() 
                                     else:
                                         st.error("❌ Error al guardar en la nube.")
@@ -238,7 +270,9 @@ def mostrar_modulo_examenes():
         
         with tabs[-1]:
             df_all = df.sort_values(by='Días por Vencer', ascending=True)
-            columnas_mostrar = ['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Estado', 'Días por Vencer']
-            st.dataframe(df_all[columnas_mostrar].style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
+            try:
+                st.dataframe(df_all[columnas_mostrar].style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
+            except AttributeError:
+                st.dataframe(df_all[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
-        st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' de Google Sheets.")
+        st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' o en tu archivo CSV.")
