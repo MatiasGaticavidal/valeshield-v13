@@ -159,6 +159,14 @@ def mostrar_modulo_estadisticas():
             df_acc = df_acc[~mask_rechazados]
 
             df_acc['FECHA_DT'] = df_acc['FECHA_NORM'].apply(parsear_fecha_invencible)
+            # Procesar Fechas
+            df_acc['FECHA_DT'] = df_acc['FECHA_NORM'].apply(parsear_fecha_invencible)
+            
+            # 🛡️ ESCUDO ANTI-DUPLICADOS: Filtra RUT y FECHA idénticos, conservando solo el primero
+            df_acc = df_acc.drop_duplicates(subset=['RUT_LIMPIO', 'FECHA_DT'], keep='first')
+            
+            # Asegurar que el año es evaluado correctamente
+            df_acc['AÑO_CALCULADO'] = pd.to_datetime(df_acc['FECHA_DT'], errors='coerce').dt.year
             df_acc['AÑO_CALCULADO'] = pd.to_datetime(df_acc['FECHA_DT'], errors='coerce').dt.year
             df_acc = df_acc[(df_acc['AÑO_CALCULADO'] == filtro_ano) | (df_acc['AÑO_CALCULADO'].isna())]
             
@@ -371,4 +379,5 @@ def mostrar_modulo_estadisticas():
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
         st.rerun()
+
 
