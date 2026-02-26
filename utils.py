@@ -84,23 +84,31 @@ def obtener_datos_nube(nombre_pestana):
     except Exception as e:
         return pd.DataFrame()
 
+import math
+
 def guardar_fila_nube(nueva_fila_dict, nombre_pestana):
     try:
         doc = conectar_google_sheets()
         if doc:
-            # Forzamos que siempre busque la pestaña con el nombre exacto
             hoja = doc.worksheet(nombre_pestana)
             
-            # Limpieza de seguridad: Convertimos todo a texto simple para que Google no lo rechace
-            valores = [str(v) if v is not None else "" for v in nueva_fila_dict.values()]
+            # TRADUCTOR UNIVERSAL: Convierte cualquier dato problemático (NaN, NaT, Fechas) a texto puro
+            valores_limpios = []
+            for valor in nueva_fila_dict.values():
+                if pd.isna(valor):  # Atrapa NaT de fechas o NaN de pandas
+                    valores_limpios.append("")
+                elif isinstance(valor, float) and math.isnan(valor):
+                    valores_limpios.append("")
+                else:
+                    valores_limpios.append(str(valor).strip())
             
-            # Insertamos la fila asegurándonos de que no rompa la estructura
-            hoja.append_row(valores, value_input_option='USER_ENTERED')
+            # value_input_option='USER_ENTERED' obliga a Sheets a leerlo como si lo teclearas tú misma
+            hoja.append_row(valores_limpios, value_input_option='USER_ENTERED')
             return True
         return False
     except Exception as e:
-        # Ahora el error será específico y nos dirá QUÉ columna falla
-        st.error(f"🚨 Error al guardar en '{nombre_pestana}': {e}")
+        # Esto nos dirá el motivo técnico exacto si Google lo vuelve a rechazar
+        st.error(f"🚨 Error crítico al guardar en nube ({nombre_pestana}): {str(e)}")
         return False
 
 def actualizar_estado_firma(token, url_drive):
@@ -264,5 +272,6 @@ def fusionar_nominas(df_existente, df_nueva):
     # Devolvemos el formato a la normalidad
     df_existente.reset_index(inplace=True)
     return df_existente
+
 
 
