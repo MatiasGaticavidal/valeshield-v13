@@ -7,33 +7,44 @@ import re
 from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
-    # --- CSS DEFINITIVO PARA APILAR COLUMNAS EN PDF ---
+    # --- CSS MODO BLOQUE ESTRICTO PARA PDF ---
     st.markdown("""
         <style>
         @media print {
-            /* 1. Ocultar menú lateral, encabezado y botones */
-            section[data-testid="stSidebar"], header[data-testid="stHeader"], button { 
+            /* 1. Desaparecer menú lateral y cabecera de Streamlit */
+            [data-testid="stSidebar"], [data-testid="stHeader"] { 
                 display: none !important; 
             }
-            .stApp { margin-top: -40px !important; }
+            .stApp { margin-top: -50px !important; }
             
-            /* 2. DESTRUIR EL EFECTO "LADO A LADO" */
-            /* Obliga a todos los contenedores horizontales a volverse verticales */
-            div[data-testid="stHorizontalBlock"] { 
-                flex-direction: column !important; 
-                display: flex !important;
+            /* 2. Desaparecer todos los botones para que no salgan en el papel */
+            [data-testid="baseButton-secondary"], [data-testid="baseButton-primary"] { 
+                display: none !important; 
             }
             
-            /* 3. Darle espacio a cada bloque ahora que están apilados */
-            div[data-testid="column"] { 
-                width: 100% !important;
-                max-width: 100% !important;
-                margin-bottom: 30px !important; /* Separación entre la tabla y el resumen */
+            /* 3. LA ORDEN DICTATORIAL: Romper la elasticidad */
+            /* Transforma las filas horizontales en bloques verticales apilados */
+            [data-testid="stHorizontalBlock"] { 
+                display: block !important; 
             }
             
-            /* 4. Evitar que las tablas se corten a la mitad en el cambio de página */
-            div[data-testid="stDataFrame"], div[data-testid="stMetric"] { 
+            /* Obliga a cada columna a usar el 100% de la hoja y separarse de la siguiente */
+            [data-testid="column"] { 
+                width: 100% !important; 
+                display: block !important; 
+                float: none !important;
+                margin-bottom: 20px !important; 
+            }
+            
+            /* 4. Proteger la tabla mensual para que no se parta a la mitad de la hoja */
+            [data-testid="stDataFrame"] { 
                 page-break-inside: avoid !important; 
+            }
+            
+            /* 5. Ocultar los expanders técnicos (Ajuste manual e Inspector) */
+            /* Nota: Los accidentes no se ocultan porque tienen otra clase interna */
+            details:first-of-type, details:last-of-type {
+                display: none !important;
             }
         }
         </style>
@@ -398,6 +409,7 @@ def mostrar_modulo_estadisticas():
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
         st.rerun()
+
 
 
 
