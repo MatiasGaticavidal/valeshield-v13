@@ -244,7 +244,6 @@ def mostrar_modulo_examenes():
                                     st.session_state.db_examenes.at[idx, 'Días por Vencer'] = dias_nuevos
                                     
                                     # 4. TRADUCCIÓN INVERSA PARA GOOGLE SHEETS
-                                    # Preparamos la base de datos con los nombres de columnas exactos que tienes en la nube
                                     from utils import actualizar_hoja_completa
                                     df_para_nube = st.session_state.db_examenes.copy()
                                     df_para_nube = df_para_nube.rename(columns={
@@ -256,15 +255,20 @@ def mostrar_modulo_examenes():
                                         'Estado_Original': 'ESTADO'
                                     })
                                     
-                                    # Limpiamos las columnas calculadas antes de subir para no ensuciar tu Sheets
+                                    # Limpiamos columnas calculadas
                                     columnas_a_borrar = [col for col in ['Días por Vencer', 'Estado'] if col in df_para_nube.columns]
                                     df_para_nube = df_para_nube.drop(columns=columnas_a_borrar)
                                     
-                                    # 5. ¡Inyección Directa a Google Sheets!
+                                    # 5. Inyección Directa a Google Sheets
                                     if actualizar_hoja_completa(df_para_nube, "examenes"):
                                         st.success(f"✅ ¡Éxito! Respaldo guardado y vigencia de {trabajador} renovada hasta {datos_nuevos['vigencia']}.")
                                         st.balloons()
-                                        st.cache_data.clear() # Limpiamos caché para que el semáforo se actualice al instante
+                                        st.cache_data.clear() # Limpiamos caché 
+                                        
+                                        # --- EL F5 AUTOMÁTICO ---
+                                        import time
+                                        time.sleep(2) # Pausa para ver el mensaje de éxito
+                                        st.rerun()    # Obliga a refrescar la tabla en pantalla
                                     else:
                                         st.error("❌ El PDF se analizó, pero hubo un error al guardar en la nube.")
                                 else:
@@ -277,11 +281,5 @@ def mostrar_modulo_examenes():
             st.dataframe(df_all.style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
         st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' de Google Sheets.")
-                
-        with tabs[-1]: # La última pestaña es "Ver Todo"
-            df_all = df.sort_values(by='Días por Vencer', ascending=True)
-            st.dataframe(df_all.style.map(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
-    else:
 
-        st.info("La matriz general está vacía. Asegúrate de que base_examenes.csv esté en la carpeta.")
 
