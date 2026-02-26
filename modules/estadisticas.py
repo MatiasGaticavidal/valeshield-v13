@@ -7,30 +7,31 @@ import re
 from utils import obtener_datos_nube, calcular_hh_estimadas, actualizar_hoja_completa, subir_pdf_drive
 
 def mostrar_modulo_estadisticas():
-    # --- CSS AVANZADO PARA IMPRESIÓN LIMPIA DE PDF ---
+    # --- CSS EXTREMO PARA IMPRESIÓN LIMPIA DE PDF ---
     st.markdown("""
         <style>
         @media print {
-            /* 1. Ocultar menús y botones de software */
+            /* 1. Ocultar menú lateral, encabezado de Streamlit y todos los botones */
             section[data-testid="stSidebar"] { display: none !important; }
             header[data-testid="stHeader"] { display: none !important; }
             button { display: none !important; }
-            .stApp { margin-top: -30px !important; }
+            .stApp { margin-top: -40px !important; }
             
-            /* 2. Ocultar el panel superior de filtros para que el PDF se vea como un reporte cerrado */
-            div[data-testid="stForm"], div[data-testid="stExpander"]:first-of-type { display: none !important; }
-            
-            /* 3. Arreglar el "Choque" de columnas aplastadas */
-            div[data-testid="stHorizontalBlock"] { 
-                display: flex !important; 
-                flex-wrap: wrap !important; 
+            /* 2. Ocultar la barra de filtros superior (es el primer contenedor con borde) */
+            div[data-testid="stVerticalBlockBorderWrapper"]:first-of-type { 
+                display: none !important; 
             }
+            
+            /* 3. ANTICHOQUE: Obligar a TODAS las columnas a usar el 100% del ancho del papel */
             div[data-testid="column"] { 
-                min-width: 200px !important; 
-                margin-bottom: 15px !important;
+                width: 100% !important;
+                flex: 0 0 100% !important;
+                min-width: 100% !important;
+                display: block !important;
+                margin-bottom: 1rem !important;
             }
             
-            /* 4. Evitar que las tablas se partan por la mitad entre la página 1 y 2 */
+            /* 4. Evitar que las tablas o tarjetas se partan por la mitad al cambiar de página */
             div[data-testid="stDataFrame"], div[data-testid="stMetric"] { 
                 page-break-inside: avoid !important; 
             }
@@ -397,6 +398,7 @@ def mostrar_modulo_estadisticas():
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
         st.rerun()
+
 
 
 
