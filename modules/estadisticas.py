@@ -130,7 +130,7 @@ def mostrar_modulo_estadisticas():
         # ==========================================
         # 4. CARGA DE ACCIDENTES (CRUCE POR RUT BLINDADO)
         # ==========================================
-        df_acc_completo = obtener_datos_nube("accidentes")
+        df_acc_completo = obtener_datos_nube("Accidentes")
         df_acc = df_acc_completo.copy() if not df_acc_completo.empty else pd.DataFrame()
         
         if not df_acc.empty:
@@ -335,7 +335,7 @@ def mostrar_modulo_estadisticas():
                                 url = subir_pdf_drive(nombre_temp, nombre_temp)
                                 if url:
                                     df_acc_completo.at[idx, 'URL_INV'] = url
-                                    actualizar_hoja_completa(df_acc_completo, "accidentes")
+                                    actualizar_hoja_completa(df_acc_completo, "Accidentes")
                                     os.remove(nombre_temp)
                                     st.rerun()
                     else:
@@ -371,3 +371,4 @@ def mostrar_modulo_estadisticas():
     if b2.button("Cerrar Panel", use_container_width=True):
         st.session_state['opcion_actual'] = "Inicio"
         st.rerun()
+
