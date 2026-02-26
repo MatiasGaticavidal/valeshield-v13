@@ -19,53 +19,62 @@ def extraer_texto_pdf(archivo_pdf):
     return texto
 
 def analizar_pdf_mutual(texto_pdf):
-    # Limpieza básica del texto para no romper el prompt
+    # Limpieza extrema del texto para no marear a la IA
     texto_input = texto_pdf.replace('"', '').replace("'", "").replace("\n", " ")
     
     prompt = f"""
     ERES UN ASISTENTE EXPERTO EN PREVENCIÓN DE RIESGOS.
-    Analiza este texto de un examen médico de la Mutual de Seguridad:
+    Analiza este texto de un examen médico:
     {texto_input}
     
     Extrae estos datos y responde ÚNICAMENTE en formato JSON puro:
     1. "nombre": Nombre completo del trabajador.
     2. "rut": RUT del trabajador (está después de 'RU-').
     3. "sucursal": Identifica si es 'Electrocom', 'MCT' o 'Placa Centro'.
-    4. "cargo": Cargo mencionado en el documento.
+    4. "cargo": Cargo mencionado.
     5. "vigencia": Fecha tras 'Vigencia Hasta' en formato YYYY-MM-DD. (Limpia puntos o dos puntos finales).
     6. "condicion": Si es apto, pon 'APTO'. Si no, 'NO APTO'.
     """
 
     for intento in range(3):
         try:
-            # USAMOS EL NOMBRE DIRECTO PARA EVITAR EL ERROR DE PERMISOS
-            modelo = genai.GenerativeModel('gemini-1.5-flash')
+            # 🛡️ USAMOS EL MODELO MÁS ESTABLE Y COMPATIBLE
+            modelo = genai.GenerativeModel('models/gemini-1.5-flash')
             respuesta = modelo.generate_content(prompt)
             
-            # Extraer el bloque JSON de la respuesta
+            # --- LIMPIEZA DE RESPUESTA ---
             res_text = respuesta.text.strip()
-            if "{" in res_text:
-                res_text = res_text[res_text.find("{"):res_text.rfind("}")+1]
+            
+            # Si la IA responde con bloques de código markdown ```json ... ```, los quitamos
+            if "```" in res_text:
+                res_text = re.sub(r'```(?:json)?|```', '', res_text).strip()
+            
+            # Forzamos a encontrar el inicio y fin del JSON
+            inicio = res_text.find("{")
+            fin = res_text.rfind("}")
+            if inicio != -1 and fin != -1:
+                res_text = res_text[inicio:fin+1]
             
             datos = json.loads(res_text)
             
-            # Limpieza automática para el caso de Juan Zapata (16.02.2027:)
+            # --- LIMPIEZA DE LA FECHA (Caso Juan Zapata) ---
             if 'vigencia' in datos and datos['vigencia'] and datos['vigencia'] != "N/A":
-                # Quitamos puntos y dejamos solo números y guiones
-                fecha_limpia = re.sub(r'[^0-9\-]', '', datos['vigencia'].replace('.', '-'))
+                # Quitamos cualquier carácter que no sea número o separador
+                fecha_raw = re.sub(r'[^0-9\.\-]', '', datos['vigencia'])
+                fecha_raw = fecha_raw.replace('.', '-') # Estandarizamos a guiones
                 
-                # Si viene en DD-MM-YYYY lo corregimos a YYYY-MM-DD
-                partes = fecha_limpia.split('-')
+                partes = fecha_raw.split('-')
                 if len(partes) == 3:
-                    if len(partes[0]) == 2: # Es DD-MM-YYYY
+                    # Si viene como DD-MM-YYYY, lo invertimos para que Sheets lo entienda
+                    if len(partes[0]) == 2:
                         datos['vigencia'] = f"{partes[2]}-{partes[1]}-{partes[0]}"
                     else:
-                        datos['vigencia'] = fecha_limpia
+                        datos['vigencia'] = fecha_raw
                 
             return datos
         except Exception as e:
             if intento == 2:
-                st.error(f"Error al procesar con IA: Verifique su conexión o API Key.")
+                st.error(f"Error de conexión con la IA. Verifique su API Key en los secretos de Streamlit.")
             time.sleep(2)
     return None
 # --- 2. LÓGICA DE SEMAFORIZACIÓN ---
@@ -285,6 +294,7 @@ def mostrar_modulo_examenes():
                 st.dataframe(df_all[columnas_mostrar].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
         st.info("La matriz general está vacía. Asegúrate de tener datos en la pestaña 'examenes' o en tu archivo CSV.")
+
 
 
 
