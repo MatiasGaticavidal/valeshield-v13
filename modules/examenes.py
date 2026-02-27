@@ -8,23 +8,24 @@ import os
 import time
 import google.generativeai as genai
 
-# Importamos herramientas clave desde tu utils.py intacto
+# Importamos herramientas desde tu utils.py intacto
 from utils import obtener_datos_nube, guardar_fila_nube, actualizar_hoja_completa, subir_pdf_drive
 
 # --- 1. MOTORES DE EXTRACCIÓN Y VALIDACIÓN ---
 
 def limpiar_rut_estricto(rut_str):
-    """Quita puntos y guiones solo para la comparación matemática. No afecta tu Excel."""
     if not rut_str or pd.isna(rut_str): return ""
     return re.sub(r'[^0-9Kk]', '', str(rut_str)).upper()
 
 def extraer_por_patrones(texto):
     """Cazador de Emergencia (Regex)"""
-    # Busca RUTs chilenos con o sin guion en todo el texto
     rut_match = re.search(r"([\d]{7,8}[\-]?[\dKk])", texto)
     vig_match = re.search(r"Vigencia Hasta.*?([\d]{2}[\.\-/][\d]{2}[\.\-/][\d]{4})", texto)
+    nombre_match = re.search(r"Trabajador\(a\)\s*:\s*([A-ZÁÉÍÓÚÑ\s]+)(?:Edad|ID|RUT)", texto)
     
     res = {
+        "nombre": nombre_match.group(1).strip() if nombre_match else "Nombre no detectado",
+        "cargo": "Por definir",
         "rut": rut_match.group(1).strip() if rut_match else "N/A",
         "vigencia": "N/A",
         "condicion": "APTO" if "no evidencia alteraciones" in texto.lower() else "PENDIENTE",
@@ -37,7 +38,7 @@ def extraer_por_patrones(texto):
     return res
 
 def analizar_pdf_mutual(texto_pdf):
-    """Cerebro IA mejorado para cazar RUTs escurridizos"""
+    """Cerebro IA mejorado para extraer Nombres, Cargos y RUTs"""
     if "GOOGLE_API_KEY" not in st.secrets:
         return extraer_por_patrones(texto_pdf)
         
@@ -47,7 +48,9 @@ def analizar_pdf_mutual(texto_pdf):
         
         prompt = f"""
         Eres experto en Prevención de Riesgos. Extrae estos datos del certificado médico en JSON puro:
-        - "rut": El RUT del TRABAJADOR evaluado (Ej: 10157634-5). Búscalo en todo el texto, ignora el RUT de la empresa empleadora.
+        - "nombre": Nombre completo del trabajador evaluado.
+        - "cargo": El cargo o puesto de trabajo que indica el documento.
+        - "rut": El RUT del TRABAJADOR evaluado. Búscalo en todo el texto, ignora el RUT de la empresa empleadora.
         - "vigencia": Fecha tras 'Vigencia Hasta' en formato YYYY-MM-DD.
         - "condicion": 'APTO' o 'NO APTO'.
         TEXTO: {texto_pdf[:4500]}
@@ -59,13 +62,13 @@ def analizar_pdf_mutual(texto_pdf):
             res_text = res_text[res_text.find("{"):res_text.rfind("}")+1]
         datos = json.loads(res_text)
         
-        # PLAN B PARA EL RUT: Si la IA devuelve un espacio en blanco, usamos el cazador manual
+        # PLAN B PARA EL RUT
         if not datos.get('rut') or datos.get('rut') == "N/A" or datos.get('rut').strip() == "":
             cazador = re.search(r"([\d]{7,8}[\-]?[\dKk])", texto_pdf)
             if cazador:
                 ruts_encontrados = re.findall(r"([\d]{7,8}[\-]?[\dKk])", texto_pdf)
                 for r in ruts_encontrados:
-                    if not r.startswith("7"): # Evitamos el RUT de Electrocom
+                    if not r.startswith("7"):
                         datos['rut'] = r
                         break
 
@@ -78,6 +81,10 @@ def analizar_pdf_mutual(texto_pdf):
                     break
                 except: continue
                 
+        # Aseguramos que existan las llaves de nombre y cargo
+        if 'nombre' not in datos: datos['nombre'] = "Nombre no detectado"
+        if 'cargo' not in datos: datos['cargo'] = "Por definir"
+        
         return datos
     except Exception:
         return extraer_por_patrones(texto_pdf)
@@ -111,6 +118,7 @@ def aplicar_colores(val):
 def mostrar_modulo_examenes():
     st.header("🩺 Control de Exámenes Ocupacionales")
     
+    # --- CARGA DE DATOS ---
     df_nube = obtener_datos_nube("examenes")
     if not df_nube.empty:
         df = df_nube.copy()
@@ -121,10 +129,95 @@ def mostrar_modulo_examenes():
         df['Estado'] = df.apply(lambda r: calcular_estado(r.get('Vigencia',''), r.get('Estado_Original','APTO'))[0], axis=1)
         st.session_state.db_examenes = df
     else:
-        st.session_state.db_examenes = pd.DataFrame()
+        st.session_state.db_examenes = pd.DataFrame(columns=['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Categoría', 'Vigencia', 'Estado_Original', 'URL_PDF', 'FECHA_SUBIDA'])
+
+    # --- PANEL NUEVO: ALTA DE TRABAJADOR ---
+    with st.expander("➕ Ingresar Nuevo Examen (Trabajador no registrado)", expanded=False):
+        st.info("Sube el PDF de la Mutual. La Inteligencia Artificial extraerá el RUT, Nombre y Vigencia automáticamente.")
+        
+        col_s, col_t = st.columns(2)
+        with col_s:
+            sucursal_nueva = st.selectbox("Asignar a Sucursal:", ["Electrocom", "MCT", "Placa Centro"])
+        with col_t:
+            tipo_examen_nuevo = st.text_input("Tipo de Examen (Ej: Altura Física, Grua Horquilla):", placeholder="Escribe la categoría...")
+            
+        f_nuevo = st.file_uploader("Subir PDF de Mutual", type=['pdf'], key="new_pdf_worker")
+        
+        if f_nuevo and st.button("🚀 Extraer Datos y Agregar a la Nómina", type="primary"):
+            if not tipo_examen_nuevo:
+                st.warning("⚠️ Debes escribir el Tipo de Examen antes de procesar.")
+            else:
+                with st.spinner("Valentin Shield está leyendo el nuevo certificado..."):
+                    lector = PyPDF2.PdfReader(f_nuevo)
+                    texto_nuevo = " ".join([p.extract_text() for p in lector.pages if p.extract_text()])
+                    
+                    if len(texto_nuevo) < 50:
+                        st.error("❌ EL PDF ESTÁ EN BLANCO O ES UNA IMAGEN ESCANEADA.")
+                    else:
+                        datos_extraidos = analizar_pdf_mutual(texto_nuevo)
+                        
+                        if datos_extraidos and datos_extraidos.get('rut') != "N/A":
+                            rut_limpio_nuevo = limpiar_rut_estricto(datos_extraidos['rut'])
+                            
+                            # Validar que no exista un duplicado exacto (Mismo RUT y Mismo Examen)
+                            db_actual = st.session_state.db_examenes
+                            duplicado = db_actual[(db_actual['RUT'].apply(limpiar_rut_estricto) == rut_limpio_nuevo) & (db_actual['Categoría'].str.lower() == tipo_examen_nuevo.strip().lower())]
+                            
+                            if not duplicado.empty:
+                                st.error(f"⚠️ El trabajador con RUT {datos_extraidos['rut']} ya tiene un examen de '{tipo_examen_nuevo}' registrado. Usa el panel de abajo para renovarlo.")
+                            else:
+                                # Subida a Drive (Incluso si da error, guarda el registro)
+                                ruta_temp_new = f"temp_new_{rut_limpio_nuevo}.pdf"
+                                with open(ruta_temp_new, "wb") as f:
+                                    f.write(f_nuevo.getbuffer())
+                                    
+                                nombre_drive_new = f"Examen_{rut_limpio_nuevo}_{datetime.now().strftime('%Y%m%d')}.pdf"
+                                link_drive_new = subir_pdf_drive(ruta_temp_new, nombre_drive_new)
+                                if os.path.exists(ruta_temp_new): os.remove(ruta_temp_new)
+
+                                # Construir la fila perfecta
+                                nueva_fila = {
+                                    'RUT': datos_extraidos['rut'],  # Guarda el formato original extraído
+                                    'NOMBRE': datos_extraidos['nombre'].upper(),
+                                    'CARGO': datos_extraidos['cargo'].upper(),
+                                    'SUCURSAL': sucursal_nueva,
+                                    'TIPO_EXAMEN': tipo_examen_nuevo.title(),
+                                    'VENCIMIENTO': datos_extraidos['vigencia'],
+                                    'ESTADO': datos_extraidos['condicion'],
+                                    'URL_PDF': link_drive_new if link_drive_new else "Error Drive",
+                                    'FECHA_SUBIDA': datetime.now().strftime("%Y-%m-%d")
+                                }
+                                
+                                # Convertimos a DataFrame y unimos con la base existente
+                                df_nueva_fila = pd.DataFrame([nueva_fila])
+                                
+                                # Recuperamos la base original y estandarizamos columnas
+                                df_master = st.session_state.db_examenes.copy()
+                                df_master = df_master.rename(columns={
+                                    'Nombre':'NOMBRE', 'Cargo':'CARGO', 'Sucursal':'SUCURSAL', 
+                                    'Categoría':'TIPO_EXAMEN', 'Vigencia':'VENCIMIENTO', 'Estado_Original':'ESTADO'
+                                })
+                                # Aseguramos tener solo las 9 maestras
+                                cols_finales = ['RUT', 'NOMBRE', 'CARGO', 'SUCURSAL', 'TIPO_EXAMEN', 'VENCIMIENTO', 'ESTADO', 'URL_PDF', 'FECHA_SUBIDA']
+                                df_master = df_master[cols_finales] if not df_master.empty else pd.DataFrame(columns=cols_finales)
+                                
+                                # Añadimos el nuevo trabajador al final
+                                df_final = pd.concat([df_master, df_nueva_fila], ignore_index=True)
+                                
+                                if actualizar_hoja_completa(df_final.fillna("N/A"), "examenes"):
+                                    st.success(f"✅ ¡{datos_extraidos['nombre']} ha sido agregado exitosamente a la nómina!")
+                                    st.balloons()
+                                    st.cache_data.clear()
+                                    time.sleep(2)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Google Sheets rechazó el guardado.")
+                        else:
+                            st.error("❌ La IA no pudo detectar el RUT en este documento nuevo.")
 
     st.divider()
 
+    # --- TABLAS Y RENOVACIÓN (Lo que ya funciona perfecto) ---
     db = st.session_state.get('db_examenes', pd.DataFrame())
     if not db.empty:
         cats = sorted(db['Categoría'].dropna().unique())
@@ -153,15 +246,10 @@ def mostrar_modulo_examenes():
                                 
                                 if datos_pdf:
                                     rut_nomina = df_cat[df_cat['Nombre'] == t_sel]['RUT'].values[0]
-                                    
-                                    # Limpieza estricta para la comparación (quita guiones)
                                     rut_pdf_limpio = limpiar_rut_estricto(datos_pdf.get('rut', ''))
                                     rut_nom_limpio = limpiar_rut_estricto(rut_nomina)
                                     
-                                    st.info(f"**RAYOS X:** RUT Sistema: `{rut_nom_limpio}` | RUT PDF: `{rut_pdf_limpio}` | Fecha: `{datos_pdf.get('vigencia')}`")
-                                    
                                     if rut_pdf_limpio == rut_nom_limpio and rut_pdf_limpio != "":
-                                        
                                         ruta_temp = f"temp_{rut_nom_limpio}.pdf"
                                         with open(ruta_temp, "wb") as f:
                                             f.write(f_ren.getbuffer())
@@ -171,8 +259,6 @@ def mostrar_modulo_examenes():
                                         if os.path.exists(ruta_temp): os.remove(ruta_temp)
                                         
                                         df_master = st.session_state.db_examenes.copy()
-                                        
-                                        # ¡Importante! Usamos el RUT original (con guion) de la nómina para encontrar la fila
                                         idx = df_master.index[df_master['RUT'] == rut_nomina].tolist()[0]
                                         
                                         df_master.at[idx, 'Vigencia'] = datos_pdf['vigencia']
