@@ -91,8 +91,13 @@ def analizar_pdf_mutual(texto_pdf):
 
 # --- 2. SEMÁFORO VISUAL ---
 
+# --- 2. SEMÁFORO VISUAL ---
+
 def calcular_estado(fecha_val, condicion):
-    if str(condicion).upper() in ["NO APTO", "PENDIENTE", "RECHAZADO"]:
+    cond_upper = str(condicion).upper()
+    if cond_upper == "INHABILITADO":
+        return "⚪ INHABILITADO", 9999
+    if cond_upper in ["NO APTO", "PENDIENTE", "RECHAZADO"]:
         return "⚫ RECHAZADO", 0
     try:
         f_str = str(fecha_val).strip()
@@ -108,7 +113,7 @@ def calcular_estado(fecha_val, condicion):
         return "⚠️ ERROR FECHA", 0
 
 def aplicar_colores(val):
-    estilos = {'VIGENTE': '#d4edda', 'POR VENCER': '#fff3cd', 'VENCIDO': '#f8d7da', 'RECHAZADO': '#e2e3e5'}
+    estilos = {'VIGENTE': '#d4edda', 'POR VENCER': '#fff3cd', 'VENCIDO': '#f8d7da', 'RECHAZADO': '#e2e3e5', 'INHABILITADO': '#f8f9fa'}
     for k, color in estilos.items():
         if k in str(val): return f'background-color: {color}; color: black;'
     return ''
@@ -292,3 +297,4 @@ def mostrar_modulo_examenes():
                                     st.error("❌ ERROR DE IA: No se pudieron extraer datos lógicos del texto.")
     else:
         st.info("No hay datos cargados.")
+
