@@ -15,7 +15,7 @@ from datetime import datetime
 # ==========================================
 ARCHIVO_JSON = "valeshield-nube-6f1e07a93916.json"
 NOMBRE_SHEET = "Base_Datos_ValeShield"
-CARPETA_DRIVE_FIRMAS = "1cW67aI9ZHEC8zs78p1L1E6WNhXzCAVfS" # Tu carpeta oficial
+CARPETA_DRIVE_FIRMAS = "1DaBZKdSzyvhXpVTl77bSUh2cMyN7kxDE" # Tu carpeta oficial
 
 # Constantes de Archivos
 ARCHIVO_USUARIOS = "usuarios_sistema.csv"
@@ -310,6 +310,7 @@ def analizar_pdf_mutual_ia(archivo_pdf):
     except Exception as e:
         st.error(f"Error en lectura de IA: {e}")
         return None
+
 
 
 
