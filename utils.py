@@ -272,6 +272,45 @@ def fusionar_nominas(df_existente, df_nueva):
     # Devolvemos el formato a la normalidad
     df_existente.reset_index(inplace=True)
     return df_existente
+    # ==========================================
+# 🧠 MOTOR DE IA Y ACTUALIZACIÓN (Módulo 5)
+# ==========================================
+import google.generativeai as genai
+
+def analizar_pdf_mutual_ia(archivo_pdf):
+    """Extrae datos del PDF y limpia la fecha del caso 'Juan Zapata'"""
+    try:
+        # 1. Extraer texto del PDF
+        lector = PyPDF2.PdfReader(archivo_pdf)
+        texto = " ".join([p.extract_text() for p in lector.pages])
+        
+        # 2. Configurar Gemini
+        credenciales_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+        modelo = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = f"""
+        Analiza este certificado de la Mutual y extrae en JSON:
+        - "rut": RUT después de 'RU-' (ej: 10157634-5).
+        - "vigencia": Fecha tras 'Vigencia Hasta' en formato YYYY-MM-DD. 
+          IMPORTANTE: Limpia dos puntos o basura al final (ej: '2027:' -> '2027-02-16').
+        - "condicion": 'APTO' o 'NO APTO'.
+        TEXTO: {texto[:4000]}
+        """
+        
+        respuesta = modelo.generate_content(prompt)
+        res_text = re.sub(r'```json\s*|```', '', respuesta.text).strip()
+        datos = json.loads(res_text)
+        
+        # Limpieza extra de seguridad para la fecha
+        if datos.get('vigencia'):
+            datos['vigencia'] = re.sub(r'[^0-9\-]', '', datos['vigencia'].replace('.', '-'))
+            
+        return datos
+    except Exception as e:
+        st.error(f"Error en lectura de IA: {e}")
+        return None
+
 
 
 
