@@ -9,83 +9,85 @@ import time
 import google.generativeai as genai
 from utils import obtener_datos_nube, guardar_fila_nube, actualizar_hoja_completa
 
-# --- 1. CONFIGURACIÓN Y LÓGICA DE EXTRACCIÓN ---
+# --- 1. MOTORES DE EXTRACCIÓN (IA + RESPALDO DE SEGURIDAD) ---
 
 def limpiar_rut_estricto(rut_str):
-    """Limpia RUT de puntos, guiones y espacios para comparaciones 100% seguras"""
+    """Normaliza el RUT para comparaciones de identidad infalibles"""
     if not rut_str or pd.isna(rut_str): return ""
     return re.sub(r'[^0-9Kk]', '', str(rut_str)).upper()
 
+def extraer_por_patrones(texto):
+    """Escáner de respaldo si la IA falla (Regex)"""
+    rut_match = re.search(r"RU-([\d\.\-Kk]+)", texto)
+    vig_match = re.search(r"Vigencia Hasta.*?([\d]{2}[\.\-/][\d]{2}[\.\-/][\d]{4})", texto)
+    nombre_match = re.search(r"Trabajador\(a\)\s*:\s*([A-ZÁÉÍÓÚÑ\s]+)(?:Edad|ID)", texto)
+    
+    res = {
+        "rut": rut_match.group(1).strip() if rut_match else "N/A",
+        "nombre": nombre_match.group(1).strip() if nombre_match else "N/A",
+        "vigencia": "N/A",
+        "condicion": "APTO" if "no evidencia alteraciones" in texto.lower() else "PENDIENTE",
+        "cargo": "Extracción por Patrón",
+        "sucursal": "MCT" if "MCT" in texto.upper() else "PLC" if "PLC" in texto.upper() else "ECOM"
+    }
+    
+    if vig_match:
+        f_raw = vig_match.group(1).replace('.', '-')
+        try:
+            res["vigencia"] = datetime.strptime(f_raw, "%d-%m-%Y").strftime("%Y-%m-%d")
+        except: pass
+    return res
+
 def analizar_pdf_mutual(texto_pdf):
-    """Cerebro de IA optimizado para detectar fechas rebeldes y RUTs"""
+    """Intenta procesar con IA, si falla usa el Escáner de Respaldo"""
     try:
+        # Configuración de API
         if "GOOGLE_API_KEY" in st.secrets:
             genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        else:
-            st.error("Falta configuración de API Key en Secrets.")
-            return None
+            modelo = genai.GenerativeModel('gemini-1.5-flash')
             
-        prompt = f"""
-        ERES UN EXPERTO EN PREVENCIÓN DE RIESGOS. 
-        Analiza el texto y extrae UNICAMENTE un JSON puro:
-        1. "nombre": Nombre completo.
-        2. "rut": RUT después de 'RU-'.
-        3. "vigencia": Fecha tras 'Vigencia Hasta' (formato YYYY-MM-DD). Limpia ":" o "." al final.
-        4. "condicion": 'APTO' o 'NO APTO'.
-        5. "sucursal": 'Electrocom', 'MCT' o 'Placa Centro'.
-        6. "cargo": Cargo del trabajador.
-
-        TEXTO:
-        {texto_pdf[:4500]}
-        """
-        
-        # Usamos 1.5-flash por ser el más compatible con la versión v1beta de la API
-        modelo = genai.GenerativeModel('gemini-1.5-flash')
-        respuesta = modelo.generate_content(prompt)
-        res_text = respuesta.text.strip()
-        
-        # Limpieza de bloque de código markdown si existe
-        if "```" in res_text:
-            res_text = re.sub(r'```(?:json)?|```', '', res_text).strip()
-        
-        # Encontrar el objeto JSON
-        inicio = res_text.find("{")
-        fin = res_text.rfind("}")
-        if inicio != -1 and fin != -1:
-            datos = json.loads(res_text[inicio:fin+1])
+            prompt = f"""
+            Eres un experto en Prevención de Riesgos. Extrae estos datos en JSON puro:
+            "nombre", "rut" (tras RU-), "sucursal" (ECOM/MCT/PLC), "cargo", 
+            "vigencia" (tras Vigencia Hasta en YYYY-MM-DD), "condicion" (APTO/NO APTO).
+            TEXTO: {texto_pdf[:4000]}
+            """
             
-            # Limpieza profunda de la fecha (Tratamiento especial para "2027:")
-            if 'vigencia' in datos and datos['vigencia']:
-                raw_f = re.sub(r'[^0-9\-\./]', '', str(datos['vigencia']))
-                raw_f = raw_f.replace('.', '-')
-                # Intentar normalizar formatos comunes a YYYY-MM-DD
+            respuesta = modelo.generate_content(prompt)
+            res_text = respuesta.text.strip()
+            if "{" in res_text:
+                res_text = res_text[res_text.find("{"):res_text.rfind("}")+1]
+            datos = json.loads(res_text)
+            
+            # Limpieza de fecha rebelde (ej: 2027:)
+            if datos.get('vigencia'):
+                f_cl = re.sub(r'[^0-9\-\./]', '', str(datos['vigencia'])).replace('.', '-')
                 for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
                     try:
-                        datos['vigencia'] = datetime.strptime(raw_f, fmt).strftime("%Y-%m-%d")
+                        datos['vigencia'] = datetime.strptime(f_cl, fmt).strftime("%Y-%m-%d")
                         break
                     except: continue
             return datos
-    except Exception as e:
-        st.error(f"Error en motor IA: {e}")
-        return None
+    except Exception:
+        # SI LA IA FALLA, EL SISTEMA USA EL ESCÁNER DE RESPALDO
+        return extraer_por_patrones(texto_pdf)
+    return None
 
-# --- 2. GESTIÓN DE COLORES Y SEMÁFORO ---
+# --- 2. SEMÁFORO Y LÓGICA VISUAL ---
 
 def calcular_estado(fecha_val, condicion):
     if str(condicion).upper() in ["NO APTO", "PENDIENTE", "RECHAZADO"]:
         return "⚫ RECHAZADO", 0
     try:
         f_str = str(fecha_val).strip()
-        for fmt in ('%Y-%m-%d', '%d-%m-%Y'):
+        for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d.%m.%Y'):
             try:
                 vigencia = datetime.strptime(f_str, fmt).date()
                 break
             except: continue
-        
         dias = (vigencia - datetime.now().date()).days
         if dias < 0: return "🔴 VENCIDO", dias
-        if dias <= 30: return "🟠 POR VENCER", dias
-        return "🟢 VIGENTE", dias
+        return ("🟠 POR VENCER" if dias <= 30 else "🟢 VIGENTE"), dias
     except:
         return "⚠️ ERROR FECHA", 0
 
@@ -95,50 +97,39 @@ def aplicar_colores(val):
         if k in str(val): return f'background-color: {color}; color: black;'
     return ''
 
-# --- 3. INTERFAZ Y PROCESOS DE GUARDADO ---
+# --- 3. MÓDULO PRINCIPAL ---
 
 def mostrar_modulo_examenes():
     st.header("🩺 Control de Exámenes Ocupacionales")
     
-    # --- CARGA Y NORMALIZACIÓN ---
-    with st.spinner("Sincronizando con Google Sheets..."):
-        df_nube = obtener_datos_nube("examenes")
-        if not df_nube.empty:
-            df = df_nube.copy()
-            df.columns = [c.upper().strip() for c in df.columns]
-            # Mapeo universal de columnas
-            rename_map = {
-                'NOMBRE':'Nombre', 'CARGO':'Cargo', 'SUCURSAL':'Sucursal', 
-                'TIPO_EXAMEN':'Categoría', 'VENCIMIENTO':'Vigencia', 'ESTADO':'Estado_Original'
-            }
-            df = df.rename(columns=rename_map)
-            df['Días por Vencer'] = df.apply(lambda r: calcular_estado(r.get('Vigencia',''), r.get('Estado_Original','APTO'))[1], axis=1)
-            df['Estado'] = df.apply(lambda r: calcular_estado(r.get('Vigencia',''), r.get('Estado_Original','APTO'))[0], axis=1)
-            st.session_state.db_examenes = df
-        else:
-            st.session_state.db_examenes = pd.DataFrame()
+    # Sincronización de Datos
+    df_nube = obtener_datos_nube("examenes")
+    if not df_nube.empty:
+        df = df_nube.copy()
+        df.columns = [c.upper().strip() for c in df.columns]
+        rename_map = {'NOMBRE':'Nombre', 'CARGO':'Cargo', 'SUCURSAL':'Sucursal', 'TIPO_EXAMEN':'Categoría', 'VENCIMIENTO':'Vigencia', 'ESTADO':'Estado_Original'}
+        df = df.rename(columns=rename_map)
+        df['Días por Vencer'] = df.apply(lambda r: calcular_estado(r.get('Vigencia',''), r.get('Estado_Original','APTO'))[1], axis=1)
+        df['Estado'] = df.apply(lambda r: calcular_estado(r.get('Vigencia',''), r.get('Estado_Original','APTO'))[0], axis=1)
+        st.session_state.db_examenes = df
+    else:
+        st.session_state.db_examenes = pd.DataFrame()
 
-    # --- A. PANEL DE ALTA NUEVA (AÑADIR TRABAJADOR) ---
+    # A. PANEL DE ALTA NUEVA (Añadir Trabajador)
     with st.expander("➕ Subir Nuevo Examen Ocupacional (Alta de Trabajador)"):
-        f_new = st.file_uploader("Subir PDF Mutual", type=['pdf'], key="new_worker")
-        if f_new and st.button("🧠 Procesar con Valentin Shield"):
-            with st.spinner("Analizando documento..."):
-                lector = PyPDF2.PdfReader(f_new)
-                texto = " ".join([p.extract_text() for p in lector.pages])
-                res = analizar_pdf_mutual(texto)
-                if res:
-                    nueva_f = {
-                        "RUT": res['rut'], "NOMBRE": res['nombre'], "CARGO": res['cargo'], 
-                        "SUCURSAL": res.get('sucursal', 'MCT'), "TIPO_EXAMEN": "Ocupacional", 
-                        "VENCIMIENTO": res['vigencia'], "ESTADO": res['condicion'], 
-                        "URL_PDF": "N/A", "FECHA_SUBIDA": datetime.now().strftime("%Y-%m-%d")
-                    }
-                    if guardar_fila_nube(nueva_f, "examenes"):
-                        st.success(f"✅ {res['nombre']} ingresado con éxito."); time.sleep(1); st.rerun()
+        f_new = st.file_uploader("Subir PDF de Mutual", type=['pdf'], key="new_w")
+        if f_new and st.button("🧠 Procesar Nuevo Registro"):
+            lector = PyPDF2.PdfReader(f_new)
+            texto = " ".join([p.extract_text() for p in lector.pages])
+            res = analizar_pdf_mutual(texto)
+            if res:
+                nueva_f = {"RUT": res['rut'], "NOMBRE": res['nombre'], "CARGO": res['cargo'], "SUCURSAL": res.get('sucursal','MCT'), "TIPO_EXAMEN": "Ocupacional", "VENCIMIENTO": res['vigencia'], "ESTADO": res['condicion'], "URL_PDF": "N/A", "FECHA_SUBIDA": datetime.now().strftime("%Y-%m-%d")}
+                if guardar_fila_nube(nueva_f, "examenes"):
+                    st.success(f"✅ {res['nombre']} registrado."); time.sleep(1); st.rerun()
 
     st.divider()
 
-    # --- B. PANEL DE CATEGORÍAS Y RENOVACIÓN VALIDADA ---
+    # B. TABLAS Y ACTUALIZACIÓN CON VALIDACIÓN DE RUT
     db = st.session_state.get('db_examenes', pd.DataFrame())
     if not db.empty:
         cats = sorted(db['Categoría'].dropna().unique())
@@ -150,50 +141,42 @@ def mostrar_modulo_examenes():
                 df_cat = db[db['Categoría'] == cat].sort_values('Días por Vencer')
                 st.dataframe(df_cat[cols_v].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
                 
-                # --- ACTUALIZADOR CON VALIDACIÓN DE RUT ---
-                with st.expander(f"📎 Renovar Vigencia / Actualizar PDF para {cat}"):
-                    t_sel = st.selectbox("Trabajador en Nómina:", df_cat['Nombre'].tolist(), key=f"s_{i}")
-                    f_renov = st.file_uploader("Subir Certificado de Mutual", type=['pdf'], key=f"f_{i}")
+                # --- MOTOR DE RENOVACIÓN CON VALIDACIÓN DE IDENTIDAD ---
+                with st.expander(f"📎 Renovar Vigencia / Adjuntar Respaldo para {cat}"):
+                    t_sel = st.selectbox("Seleccionar Trabajador:", df_cat['Nombre'].tolist(), key=f"s_{i}")
+                    f_ren = st.file_uploader("Subir Certificado Renovado", type=['pdf'], key=f"f_{i}")
                     
-                    if f_renov and st.button("💾 Validar y Sincronizar", key=f"b_{i}", type="primary"):
-                        with st.spinner("Validando identidad..."):
-                            lector = PyPDF2.PdfReader(f_renov)
-                            texto_renov = " ".join([p.extract_text() for p in lector.pages])
-                            datos_pdf = analizar_pdf_mutual(texto_renov)
+                    if f_ren and st.button("💾 Validar Identidad y Actualizar", key=f"b_{i}", type="primary"):
+                        with st.spinner("Validando RUT en documento..."):
+                            lector = PyPDF2.PdfReader(f_ren)
+                            texto_ren = " ".join([p.extract_text() for p in lector.pages])
+                            datos_pdf = analizar_pdf_mutual(texto_ren)
                             
                             if datos_pdf:
                                 rut_nomina = df_cat[df_cat['Nombre'] == t_sel]['RUT'].values[0]
                                 
-                                # VALIDACIÓN ESTRICTA DE IDENTIDAD
+                                # COMPARACIÓN ESTRICTA DE RUT
                                 if limpiar_rut_estricto(datos_pdf['rut']) == limpiar_rut_estricto(rut_nomina):
-                                    # 1. Guardado físico de respaldo
+                                    # Guardar respaldo físico
                                     if not os.path.exists("respaldos_mutual"): os.makedirs("respaldos_mutual")
                                     with open(f"respaldos_mutual/{limpiar_rut_estricto(rut_nomina)}.pdf", "wb") as f:
-                                        f.write(f_renov.getbuffer())
+                                        f.write(f_ren.getbuffer())
                                     
-                                    # 2. Actualización de datos
+                                    # Actualizar base de datos
                                     df_master = st.session_state.db_examenes.copy()
                                     idx = df_master.index[df_master['RUT'] == rut_nomina].tolist()[0]
                                     df_master.at[idx, 'Vigencia'] = datos_pdf['vigencia']
                                     df_master.at[idx, 'Estado_Original'] = datos_pdf['condicion']
                                     
-                                    # 3. ESCUDO DE COLUMNAS PARA SHEETS
-                                    df_save = df_master.rename(columns={
-                                        'Nombre':'NOMBRE', 'Cargo':'CARGO', 'Sucursal':'SUCURSAL', 
-                                        'Categoría':'TIPO_EXAMEN', 'Vigencia':'VENCIMIENTO', 'Estado_Original':'ESTADO'
-                                    })
-                                    # Garantizamos las 9 columnas exactas
+                                    # Escudo Anti-Borrado de Columnas
+                                    df_save = df_master.rename(columns={'Nombre':'NOMBRE', 'Cargo':'CARGO', 'Sucursal':'SUCURSAL', 'Categoría':'TIPO_EXAMEN', 'Vigencia':'VENCIMIENTO', 'Estado_Original':'ESTADO'})
                                     cols_finales = ['RUT', 'NOMBRE', 'CARGO', 'SUCURSAL', 'TIPO_EXAMEN', 'VENCIMIENTO', 'ESTADO', 'URL_PDF', 'FECHA_SUBIDA']
                                     for c in cols_finales:
                                         if c not in df_save.columns: df_save[c] = "N/A"
                                     
                                     if actualizar_hoja_completa(df_save[cols_finales].fillna("N/A"), "examenes"):
-                                        st.success(f"✅ ¡Vigencia de {t_sel} actualizada al {datos_pdf['vigencia']}!"); time.sleep(1.5); st.rerun()
+                                        st.success(f"✅ ¡Identidad Confirmada! Vigencia de {t_sel} actualizada."); time.sleep(1.5); st.rerun()
                                 else:
                                     st.error(f"❌ ERROR DE IDENTIDAD: El RUT del PDF ({datos_pdf['rut']}) no coincide con el seleccionado ({rut_nomina}).")
-        
-        # Pestaña "Ver Todo"
-        with tabs[-1]:
-            st.dataframe(db[cols_v].sort_values('Días por Vencer').style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
     else:
-        st.info("La base de datos está vacía. Inicia agregando trabajadores con el botón superior.")
+        st.info("Inicia agregando trabajadores con el botón superior.")
