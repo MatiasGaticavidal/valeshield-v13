@@ -91,8 +91,6 @@ def analizar_pdf_mutual(texto_pdf):
 
 # --- 2. SEMÁFORO VISUAL ---
 
-# --- 2. SEMÁFORO VISUAL ---
-
 def calcular_estado(fecha_val, condicion):
     cond_upper = str(condicion).upper()
     if cond_upper == "INHABILITADO":
@@ -229,14 +227,81 @@ def mostrar_modulo_examenes():
     # --- TABLAS Y RENOVACIÓN ---
     db = st.session_state.get('db_examenes', pd.DataFrame())
     if not db.empty:
-        cats = sorted(db['Categoría'].dropna().unique())
-        tabs = st.tabs([f"📋 {c}" for c in cats] + ["🌍 Ver Todo"])
-        cols_v = ['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Vigencia', 'Estado', 'Días por Vencer']
+        # 🔍 1. FILTROS GLOBALES DE SUCURSAL E INHABILITADOS
+        st.markdown("### 🔍 Filtros de Visualización")
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            sucursales_disp = ["Todas"] + sorted(db['Sucursal'].dropna().unique().tolist())
+            filtro_sucursal = st.selectbox("Filtrar por Sucursal:", sucursales_disp)
+        with col_f2:
+            ocultar_inhabilitados = st.checkbox("Ocultar trabajadores inhabilitados", value=True)
 
-        for i, cat in enumerate(cats):
-            with tabs[i]:
-                df_cat = db[db['Categoría'] == cat].sort_values('Días por Vencer')
-                st.dataframe(df_cat[cols_v].style.applymap(aplicar_colores, subset=['Estado']), use_container_width=True, hide_index=True)
+        # Aplicamos los filtros a la vista
+        db_vista = db.copy()
+        if filtro_sucursal != "Todas":
+            db_vista = db_vista[db_vista['Sucursal'] == filtro_sucursal]
+        if ocultar_inhabilitados:
+            db_vista = db_vista[~db_vista['Estado'].str.contains("INHABILITADO", na=False)]
+
+        cats = sorted(db_vista['Categoría'].dropna().unique())
+        if not cats:
+            st.warning("No hay trabajadores que coincidan con los filtros actuales.")
+        else:
+            tabs = st.tabs([f"📋 {c}" for c in cats] + ["🌍 Ver Todo"])
+            
+            # 📥 2. AGREGAMOS EL LINK DEL PDF A LAS COLUMNAS
+            cols_v = ['RUT', 'Nombre', 'Cargo', 'Sucursal', 'Vigencia', 'Estado', 'Días por Vencer', 'URL_PDF']
+
+            for i, cat in enumerate(cats):
+                with tabs[i]:
+                    df_cat = db_vista[db_vista['Categoría'] == cat].sort_values('Días por Vencer')
+                    
+                    # 3. TABLA CON BOTÓN DE DESCARGA DIRECTO
+                    st.dataframe(
+                        df_cat[cols_v].style.applymap(aplicar_colores, subset=['Estado']), 
+                        use_container_width=True, 
+                        hide_index=True,
+                        column_config={
+                            "URL_PDF": st.column_config.LinkColumn("Descargar Respaldo", display_text="📥 Abrir PDF")
+                        }
+                    )
+                    
+                    # ⚙️ 4. PANEL DE ADMINISTRACIÓN (EDITAR CARGO E INHABILITAR)
+                    with st.expander(f"⚙️ Administrar Trabajador (Editar Cargo o Inhabilitar)"):
+                        t_admin = st.selectbox("Seleccionar Trabajador:", df_cat['Nombre'].tolist(), key=f"admin_{i}")
+                        if t_admin:
+                            fila_admin = df_cat[df_cat['Nombre'] == t_admin].iloc[0]
+                            col_a1, col_a2 = st.columns(2)
+                            
+                            with col_a1:
+                                nuevo_cargo = st.text_input("Editar Cargo:", value=fila_admin['Cargo'], key=f"cargo_{i}")
+                            with col_a2:
+                                est_actual = fila_admin.get('Estado_Original', 'APTO')
+                                lista_estados = ["APTO", "NO APTO", "PENDIENTE", "INHABILITADO"]
+                                idx_est = lista_estados.index(est_actual) if est_actual in lista_estados else 0
+                                nuevo_estado = st.selectbox("Estado Laboral:", lista_estados, index=idx_est, key=f"est_{i}")
+                            
+                            if st.button("💾 Guardar Cambios Manuales", key=f"btn_admin_{i}"):
+                                rut_admin = fila_admin['RUT']
+                                df_master = st.session_state.db_examenes.copy()
+                                idx_m = df_master.index[df_master['RUT'] == rut_admin].tolist()[0]
+                                
+                                df_master.at[idx_m, 'Cargo'] = nuevo_cargo.upper()
+                                df_master.at[idx_m, 'Estado_Original'] = nuevo_estado
+                                
+                                df_save = df_master.rename(columns={
+                                    'Nombre':'NOMBRE', 'Cargo':'CARGO', 'Sucursal':'SUCURSAL', 
+                                    'Categoría':'TIPO_EXAMEN', 'Vigencia':'VENCIMIENTO', 'Estado_Original':'ESTADO'
+                                })
+                                cols_finales = ['RUT', 'NOMBRE', 'CARGO', 'SUCURSAL', 'TIPO_EXAMEN', 'VENCIMIENTO', 'ESTADO', 'URL_PDF', 'FECHA_SUBIDA']
+                                for c in cols_finales:
+                                    if c not in df_save.columns: df_save[c] = "N/A"
+                                    
+                                if actualizar_hoja_completa(df_save[cols_finales].fillna("N/A"), "examenes"):
+                                    st.success("✅ Cambios guardados correctamente.")
+                                    st.cache_data.clear()
+                                    time.sleep(1)
+                                    st.rerun()
                 
                 with st.expander(f"📎 Renovar Vigencia / Adjuntar Respaldo para {cat}"):
                     t_sel = st.selectbox("Seleccionar Trabajador:", df_cat['Nombre'].tolist(), key=f"s_{i}")
@@ -297,4 +362,5 @@ def mostrar_modulo_examenes():
                                     st.error("❌ ERROR DE IA: No se pudieron extraer datos lógicos del texto.")
     else:
         st.info("No hay datos cargados.")
+
 
