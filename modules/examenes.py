@@ -139,13 +139,24 @@ def mostrar_modulo_examenes():
         with col_s:
             sucursal_nueva = st.selectbox("Asignar a Sucursal:", ["Electrocom", "MCT", "Placa Centro"])
         with col_t:
-            tipo_examen_nuevo = st.text_input("Tipo de Examen (Ej: Altura Física, Grua Horquilla):", placeholder="Escribe la categoría...")
+            # LÓGICA DE LISTA DESPLEGABLE INTELIGENTE
+            categorias_actuales = []
+            if not st.session_state.db_examenes.empty and 'Categoría' in st.session_state.db_examenes.columns:
+                categorias_actuales = sorted(st.session_state.db_examenes['Categoría'].dropna().unique().tolist())
+            
+            opciones_examen = categorias_actuales + ["➕ Crear nuevo tipo..."]
+            seleccion_examen = st.selectbox("Tipo de Examen:", opciones_examen)
+            
+            if seleccion_examen == "➕ Crear nuevo tipo...":
+                tipo_examen_nuevo = st.text_input("Escribe el nuevo tipo de examen:")
+            else:
+                tipo_examen_nuevo = seleccion_examen
             
         f_nuevo = st.file_uploader("Subir PDF de Mutual", type=['pdf'], key="new_pdf_worker")
         
         if f_nuevo and st.button("🚀 Extraer Datos y Agregar a la Nómina", type="primary"):
             if not tipo_examen_nuevo:
-                st.warning("⚠️ Debes escribir el Tipo de Examen antes de procesar.")
+                st.warning("⚠️ Debes seleccionar o escribir el Tipo de Examen antes de procesar.")
             else:
                 with st.spinner("Valentin Shield está leyendo el nuevo certificado..."):
                     lector = PyPDF2.PdfReader(f_nuevo)
@@ -159,14 +170,12 @@ def mostrar_modulo_examenes():
                         if datos_extraidos and datos_extraidos.get('rut') != "N/A":
                             rut_limpio_nuevo = limpiar_rut_estricto(datos_extraidos['rut'])
                             
-                            # Validar que no exista un duplicado exacto (Mismo RUT y Mismo Examen)
                             db_actual = st.session_state.db_examenes
                             duplicado = db_actual[(db_actual['RUT'].apply(limpiar_rut_estricto) == rut_limpio_nuevo) & (db_actual['Categoría'].str.lower() == tipo_examen_nuevo.strip().lower())]
                             
                             if not duplicado.empty:
                                 st.error(f"⚠️ El trabajador con RUT {datos_extraidos['rut']} ya tiene un examen de '{tipo_examen_nuevo}' registrado. Usa el panel de abajo para renovarlo.")
                             else:
-                                # Subida a Drive (Incluso si da error, guarda el registro)
                                 ruta_temp_new = f"temp_new_{rut_limpio_nuevo}.pdf"
                                 with open(ruta_temp_new, "wb") as f:
                                     f.write(f_nuevo.getbuffer())
@@ -175,9 +184,8 @@ def mostrar_modulo_examenes():
                                 link_drive_new = subir_pdf_drive(ruta_temp_new, nombre_drive_new)
                                 if os.path.exists(ruta_temp_new): os.remove(ruta_temp_new)
 
-                                # Construir la fila perfecta
                                 nueva_fila = {
-                                    'RUT': datos_extraidos['rut'],  # Guarda el formato original extraído
+                                    'RUT': datos_extraidos['rut'],
                                     'NOMBRE': datos_extraidos['nombre'].upper(),
                                     'CARGO': datos_extraidos['cargo'].upper(),
                                     'SUCURSAL': sucursal_nueva,
@@ -188,20 +196,16 @@ def mostrar_modulo_examenes():
                                     'FECHA_SUBIDA': datetime.now().strftime("%Y-%m-%d")
                                 }
                                 
-                                # Convertimos a DataFrame y unimos con la base existente
                                 df_nueva_fila = pd.DataFrame([nueva_fila])
-                                
-                                # Recuperamos la base original y estandarizamos columnas
                                 df_master = st.session_state.db_examenes.copy()
                                 df_master = df_master.rename(columns={
                                     'Nombre':'NOMBRE', 'Cargo':'CARGO', 'Sucursal':'SUCURSAL', 
                                     'Categoría':'TIPO_EXAMEN', 'Vigencia':'VENCIMIENTO', 'Estado_Original':'ESTADO'
                                 })
-                                # Aseguramos tener solo las 9 maestras
+                                
                                 cols_finales = ['RUT', 'NOMBRE', 'CARGO', 'SUCURSAL', 'TIPO_EXAMEN', 'VENCIMIENTO', 'ESTADO', 'URL_PDF', 'FECHA_SUBIDA']
                                 df_master = df_master[cols_finales] if not df_master.empty else pd.DataFrame(columns=cols_finales)
                                 
-                                # Añadimos el nuevo trabajador al final
                                 df_final = pd.concat([df_master, df_nueva_fila], ignore_index=True)
                                 
                                 if actualizar_hoja_completa(df_final.fillna("N/A"), "examenes"):
@@ -217,7 +221,7 @@ def mostrar_modulo_examenes():
 
     st.divider()
 
-    # --- TABLAS Y RENOVACIÓN (Lo que ya funciona perfecto) ---
+    # --- TABLAS Y RENOVACIÓN ---
     db = st.session_state.get('db_examenes', pd.DataFrame())
     if not db.empty:
         cats = sorted(db['Categoría'].dropna().unique())
