@@ -127,7 +127,7 @@ def mostrar_modulo_examenes():
                     f_ren = st.file_uploader("Subir Certificado Renovado (PDF)", type=['pdf'], key=f"f_{i}")
                     
                     if f_ren and st.button("💾 Validar Identidad y Actualizar", key=f"b_{i}", type="primary"):
-                        with st.spinner(f"Validando RUT y conectando con Google Drive para {t_sel}..."):
+                        with st.spinner(f"Analizando documento de {t_sel}..."):
                             lector = PyPDF2.PdfReader(f_ren)
                             texto_ren = " ".join([p.extract_text() for p in lector.pages])
                             datos_pdf = analizar_pdf_mutual(texto_ren)
@@ -135,44 +135,52 @@ def mostrar_modulo_examenes():
                             if datos_pdf:
                                 rut_nomina = df_cat[df_cat['Nombre'] == t_sel]['RUT'].values[0]
                                 
+                                # Limpiamos ambos RUTs
+                                rut_pdf_limpio = limpiar_rut_estricto(datos_pdf.get('rut', ''))
+                                rut_nom_limpio = limpiar_rut_estricto(rut_nomina)
+                                
+                                # 🔍 MODO RAYOS X: Te muestra qué está viendo la IA
+                                st.info(f"**RAYOS X DEL SISTEMA:**\n- RUT Sistema: `{rut_nom_limpio}`\n- RUT PDF: `{rut_pdf_limpio}`\n- Fecha detectada: `{datos_pdf.get('vigencia', 'N/A')}`")
+                                
                                 # 1. VALIDACIÓN ESTRICTA DE RUT
-                                if limpiar_rut_estricto(datos_pdf['rut']) == limpiar_rut_estricto(rut_nomina):
+                                if rut_pdf_limpio == rut_nom_limpio and rut_pdf_limpio != "":
                                     
-                                    # 2. Guardar PDF temporalmente y subir a Drive
-                                    ruta_temp = f"temp_{limpiar_rut_estricto(rut_nomina)}.pdf"
+                                    # 2. Subir a Drive
+                                    ruta_temp = f"temp_{rut_nom_limpio}.pdf"
                                     with open(ruta_temp, "wb") as f:
                                         f.write(f_ren.getbuffer())
                                         
-                                    nombre_drive = f"Examen_{limpiar_rut_estricto(rut_nomina)}_{datetime.now().strftime('%Y%m%d')}.pdf"
+                                    nombre_drive = f"Examen_{rut_nom_limpio}_{datetime.now().strftime('%Y%m%d')}.pdf"
                                     link_drive = subir_pdf_drive(ruta_temp, nombre_drive)
-                                    
                                     if os.path.exists(ruta_temp): os.remove(ruta_temp)
                                     
-                                    # 3. Actualizar la memoria del sistema
+                                    # 3. Actualizar la memoria
                                     df_master = st.session_state.db_examenes.copy()
                                     idx = df_master.index[df_master['RUT'] == rut_nomina].tolist()[0]
                                     df_master.at[idx, 'Vigencia'] = datos_pdf['vigencia']
                                     df_master.at[idx, 'Estado_Original'] = datos_pdf['condicion']
-                                    df_master.at[idx, 'URL_PDF'] = link_drive if link_drive else "Error al subir"
+                                    df_master.at[idx, 'URL_PDF'] = link_drive if link_drive else "Error Drive"
                                     df_master.at[idx, 'FECHA_SUBIDA'] = datetime.now().strftime("%Y-%m-%d")
                                     
-                                    # 4. PREPARACIÓN DE COLUMNAS EXACTAS PARA GOOGLE SHEETS
+                                    # 4. Formatear para Sheets
                                     df_save = df_master.rename(columns={
                                         'Nombre':'NOMBRE', 'Cargo':'CARGO', 'Sucursal':'SUCURSAL', 
                                         'Categoría':'TIPO_EXAMEN', 'Vigencia':'VENCIMIENTO', 'Estado_Original':'ESTADO'
                                     })
                                     
-                                    # Forzamos que existan tus 9 columnas maestras sin faltar ninguna
                                     cols_finales = ['RUT', 'NOMBRE', 'CARGO', 'SUCURSAL', 'TIPO_EXAMEN', 'VENCIMIENTO', 'ESTADO', 'URL_PDF', 'FECHA_SUBIDA']
                                     for c in cols_finales:
                                         if c not in df_save.columns: df_save[c] = "N/A"
                                     
-                                    # 5. Sobrescribir en Sheets en la hoja "examenes"
+                                    # 5. Guardar en Sheets y Limpiar Caché
                                     if actualizar_hoja_completa(df_save[cols_finales].fillna("N/A"), "examenes"):
-                                        st.success(f"✅ ¡Identidad Confirmada! Datos de {t_sel} actualizados y PDF respaldado en Drive.")
-                                        time.sleep(2)
+                                        st.success(f"✅ ¡Guardado Exitoso en Google Sheets!")
+                                        st.cache_data.clear() # ELIMINAMOS EL CACHÉ PEGADO
+                                        time.sleep(3)
                                         st.rerun()
+                                    else:
+                                        st.error("❌ ERROR CRÍTICO: El código procesó todo, pero Google Sheets rechazó el guardado.")
                                 else:
-                                    st.error(f"❌ ERROR DE IDENTIDAD: El RUT del PDF ({datos_pdf['rut']}) no coincide con el seleccionado ({rut_nomina}).")
-    else:
-        st.info("No hay datos cargados en la base de exámenes.")
+                                    st.error("❌ ERROR DE IDENTIDAD: Los RUTs no coinciden.")
+                            else:
+                                st.error("❌ ERROR DE IA: La Inteligencia Artificial no pudo extraer el texto del PDF.")
