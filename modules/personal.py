@@ -122,32 +122,102 @@ def mostrar_modulo_personal(rol_usuario):
 
     # --- PESTAÑA 3: IMPORTADOR MASIVO ---
     with tab_masivo:
-        st.markdown("### 📥 Importador de Nómina (Excel / CSV)")
-        st.info("💡 Tu archivo debe contener estas columnas exactas: **RUT, NOMBRE, SUCURSAL, CARGO, SEXO**")
+        import re
+        import time
         
-        archivo_nomina = st.file_uploader("Sube tu archivo de Excel o CSV aquí", type=['xlsx', 'csv'])
-        
-        if archivo_nomina is not None:
-            try:
-                if archivo_nomina.name.endswith('.csv'):
-                    df_subido = pd.read_csv(archivo_nomina)
-                else:
-                    df_subido = pd.read_excel(archivo_nomina)
-                    
-                df_subido.columns = [str(c).strip().upper() for c in df_subido.columns]
+        # --- INICIO DEL PUENTE TALANA ---
+        st.markdown("### 📥 Puente Talana (Carga Directa Inteligente)")
+        st.info("💡 Ve a Talana, selecciona las filas de los trabajadores, cópialas (Ctrl+C) y pégalas aquí (Ctrl+V).")
 
-                if 'ESTADO' not in df_subido.columns:
-                    df_subido['ESTADO'] = 'Activo'
+        # Controladores de paso en la memoria
+        if 'talana_paso' not in st.session_state:
+            st.session_state.talana_paso = 1
+            st.session_state.talana_nuevos = []
 
-                st.markdown("#### 👁️ Vista Previa de los Datos:")
-                st.dataframe(df_subido.head(3), use_container_width=True)
+        # PASO 1: ZONA DE PEGADO
+        if st.session_state.talana_paso == 1:
+            texto_pegado = st.text_area("Pega los datos copiados de Talana aquí:", height=150, placeholder="Ej: 9947182-4   Raiman Borquez...   Vendedor   Ecom. Valdivia")
+            
+            if st.button("🔍 Escanear y Detectar", type="primary") and texto_pegado:
+                nuevos_trabajadores = []
+                # Escáner inteligente línea por línea
+                for linea in texto_pegado.split('\n'):
+                    partes = linea.split('\t') # Talana separa por tabulaciones al copiar
+                    if len(partes) >= 4:
+                        # Busca el RUT en la línea para anclarse
+                        rut_detectado = [p for p in partes if re.search(r"\d{7,8}-[\dkK]", str(p))]
+                        if rut_detectado:
+                            try:
+                                rut_puro = rut_detectado[0].strip()
+                                idx_rut = partes.index(rut_puro)
+                                
+                                # Captura basada en el orden de Talana: Rut, Persona, Cargo, Gerencia
+                                nombre = partes[idx_rut + 1].strip().upper()
+                                cargo = partes[idx_rut + 2].strip().upper()
+                                sucursal_raw = partes[idx_rut + 3].strip().lower()
+                                
+                                # Traductor automático a tus sucursales oficiales
+                                if "ecom" in sucursal_raw or "electrocom" in sucursal_raw: sucursal = "ECOM VALDIVIA"
+                                elif "mct" in sucursal_raw: sucursal = "MCT VALDIVIA"
+                                elif "plc" in sucursal_raw or "placa" in sucursal_raw: sucursal = "PLC VALDIVIA"
+                                else: sucursal = sucursal_raw.upper()
+                                
+                                nuevos_trabajadores.append({
+                                    "RUT": rut_puro, "NOMBRE": nombre, "SUCURSAL": sucursal,
+                                    "CARGO": cargo, "SEXO": "Seleccionar", "ESTADO": "Activo"
+                                })
+                            except: pass
                 
-                if st.button("🔄 Fusionar y Actualizar Nómina Maestra", type="primary", use_container_width=True):
-                    with st.spinner("Procesando archivo y limpiando datos..."):
-                        df_fusionado = fusionar_nominas(df_personal, df_subido)
-                        if actualizar_hoja_completa(df_fusionado, "personal"):
-                            st.success("✅ ¡Nómina Maestra actualizada correctamente!")
-                            st.balloons()
-                            st.rerun()
-            except Exception as e:
-                st.error(f"⚠️ Error al leer el archivo. Detalle técnico: {e}")
+                if nuevos_trabajadores:
+                    st.session_state.talana_nuevos = nuevos_trabajadores
+                    st.session_state.talana_paso = 2
+                    st.rerun()
+                else:
+                    st.error("❌ No detecté ningún RUT válido. Asegúrate de copiar bien la tabla desde Talana.")
+
+        # PASO 2: MESA DE VALIDACIÓN DE SEXO
+        elif st.session_state.talana_paso == 2:
+            df_nuevos = pd.DataFrame(st.session_state.talana_nuevos)
+            st.success(f"✅ ¡He detectado {len(df_nuevos)} trabajadores desde Talana!")
+            st.warning("⚠️ Paso Final: Selecciona el sexo de cada trabajador en la tabla para habilitar el guardado.")
+            
+            # Editor interactivo con lista desplegable para Sexo
+            df_editado = st.data_editor(
+                df_nuevos,
+                column_config={
+                    "SEXO": st.column_config.SelectboxColumn("Sexo (Obligatorio)", options=["Seleccionar", "MASCULINO", "FEMENINO"], required=True),
+                    "RUT": st.column_config.TextColumn(disabled=True),
+                    "NOMBRE": st.column_config.TextColumn(disabled=True),
+                    "CARGO": st.column_config.TextColumn(disabled=True),
+                    "SUCURSAL": st.column_config.TextColumn(disabled=True),
+                    "ESTADO": None # Lo ocultamos para que sea una carga limpia
+                },
+                hide_index=True, use_container_width=True
+            )
+            
+            # Verificamos si faltan sexos por seleccionar
+            faltan_sexo = len(df_editado[df_editado['SEXO'] == "Seleccionar"])
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("❌ Descartar todo y volver"):
+                    st.session_state.talana_paso = 1
+                    st.rerun()
+            with col2:
+                if faltan_sexo > 0:
+                    st.button(f"Falta definir sexo en {faltan_sexo} trabajadores", disabled=True, use_container_width=True)
+                else:
+                    if st.button("💾 Confirmar Carga Definitiva", type="primary", use_container_width=True):
+                        with st.spinner("Sincronizando nómina en la nube..."):
+                            df_existente = obtener_datos_nube("personal")
+                            df_final = fusionar_nominas(df_existente, df_editado)
+                            
+                            if actualizar_hoja_completa(df_final, "personal"):
+                                st.success("🎉 ¡Nómina actualizada exitosamente para estadísticas!")
+                                st.session_state.talana_paso = 1
+                                st.cache_data.clear()
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error("❌ Error al guardar en Google Sheets.")
+        # --- FIN DEL PUENTE TALANA ---
