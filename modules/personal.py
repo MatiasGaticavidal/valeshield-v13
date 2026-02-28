@@ -120,80 +120,122 @@ def mostrar_modulo_personal(rol_usuario):
                 else:
                     st.error("⚠️ Los campos RUT y Nombre son obligatorios.")
 
-    # --- PESTAÑA 3: IMPORTADOR MASIVO ---
+   # --- PESTAÑA 3: IMPORTADOR MASIVO ---
     with tab_masivo:
         import re
         import time
         
         # --- INICIO DEL PUENTE TALANA ---
-        st.markdown("### 📥 Puente Talana (Carga Directa Inteligente)")
-        st.info("💡 Ve a Talana, selecciona las filas de los trabajadores, cópialas (Ctrl+C) y pégalas aquí (Ctrl+V).")
+        st.markdown("### 📥 Puente Talana (Auditor Inteligente)")
+        st.info("💡 Pega a todos los trabajadores (Ctrl+V). El sistema actualizará a los antiguos automáticamente y solo te pedirá datos de los nuevos.")
 
         if 'talana_paso' not in st.session_state:
             st.session_state.talana_paso = 1
             st.session_state.talana_nuevos = []
+            st.session_state.talana_actualizaciones = []
 
         if st.session_state.talana_paso == 1:
-            texto_pegado = st.text_area("Pega los datos copiados de Talana aquí:", height=150, placeholder="Ej: \n14280603-7\nAguero Morales, Daniella... \t Jefe \t Plc. Valdivia")
+            texto_pegado = st.text_area("Pega los datos copiados de Talana aquí:", height=150, placeholder="Ej: \n14280603-7\nAguero Morales, Daniella... \t Jefe \t Plc. Valdivia\nSi")
             
-            if st.button("🔍 Escanear y Detectar", type="primary") and texto_pegado:
-                nuevos_trabajadores = []
-                lineas = texto_pegado.split('\n')
-                ultimo_rut_visto = ""
-                
-                for linea in lineas:
-                    linea = linea.strip()
-                    if not linea: continue
-                    
-                    # 1. Capturar el RUT que Talana deja huérfano en la línea de arriba
-                    es_rut = re.search(r"^(\d{7,8}-[\dkK])$", linea, re.IGNORECASE)
-                    if es_rut:
-                        ultimo_rut_visto = es_rut.group(1).upper()
-                        continue
-                        
-                    # 2. Capturar la línea principal de datos (Ignoramos el encabezado si lo pegaste por error)
-                    if '\t' in linea and "Persona" not in linea and "Gerencia" not in linea:
-                        partes = linea.split('\t')
-                        
-                        if len(partes) >= 3:
-                            nombre = partes[0].strip().upper()
-                            cargo = partes[1].strip().upper()
-                            sucursal_raw = partes[2].strip().lower()
-                            
-                            # Validar el RUT (Usamos el que memorizó arriba, o lo buscamos si vino en esta misma línea)
-                            rut_puro = ultimo_rut_visto
-                            if len(partes) > 3 and re.search(r"\d{7,8}-[\dkK]", str(partes[3])):
-                                rut_puro = re.search(r"\d{7,8}-[\dkK]", str(partes[3])).group(0).upper()
-                                
-                            if rut_puro and nombre:
-                                # Traductor automático de sucursales oficiales
-                                if "ecom" in sucursal_raw or "electrocom" in sucursal_raw: sucursal = "ECOM VALDIVIA"
-                                elif "mct" in sucursal_raw: sucursal = "MCT VALDIVIA"
-                                elif "plc" in sucursal_raw or "placa" in sucursal_raw: sucursal = "PLC VALDIVIA"
-                                else: sucursal = "ECOM VALDIVIA" # Por defecto si no coincide
-                                
-                                # Asegurar que no se repitan en esta misma carga
-                                if not any(t['RUT'] == rut_puro for t in nuevos_trabajadores):
-                                    nuevos_trabajadores.append({
-                                        "RUT": rut_puro, "NOMBRE": nombre, "SUCURSAL": sucursal,
-                                        "CARGO": cargo, "SEXO": "Seleccionar", "ESTADO": "Activo"
-                                    })
-                                
-                                # Limpiamos la memoria del RUT para el siguiente trabajador
-                                ultimo_rut_visto = "" 
-                
-                if nuevos_trabajadores:
-                    st.session_state.talana_nuevos = nuevos_trabajadores
-                    st.session_state.talana_paso = 2
-                    st.rerun()
-                else:
-                    st.error("❌ No detecté datos. Asegúrate de copiar las filas completas de Talana.")
+            if st.button("🔍 Auditar Nómina", type="primary") and texto_pegado:
+                with st.spinner("Escaneando y comparando con la base de datos actual..."):
+                    # Obtenemos la base de datos actual para saber quiénes ya existen
+                    df_existente = obtener_datos_nube("personal")
+                    if not df_existente.empty and 'RUT' in df_existente.columns:
+                        ruts_existentes = [limpiar_rut(str(r)) for r in df_existente['RUT'].tolist()]
+                    else:
+                        ruts_existentes = []
 
-        # PASO 2: MESA DE VALIDACIÓN DE SEXO
+                    trabajadores_procesados = {}
+                    lineas = texto_pegado.split('\n')
+                    ultimo_rut = ""
+                    
+                    for linea in lineas:
+                        linea = linea.strip()
+                        if not linea: continue
+                        
+                        # 1. Captura RUT huérfano (Línea superior de Talana)
+                        es_rut = re.search(r"^(\d{7,8}-[\dkK])$", linea, re.IGNORECASE)
+                        if es_rut:
+                            ultimo_rut = limpiar_rut(es_rut.group(1))
+                            continue
+                            
+                        # 2. Captura estado Vigente (Línea inferior de Talana: "Si" / "No")
+                        if linea.lower() in ["si", "sí", "no"]:
+                            estado_vigencia = "Activo" if linea.lower() in ["si", "sí"] else "Finiquitado"
+                            if ultimo_rut and ultimo_rut in trabajadores_procesados:
+                                trabajadores_procesados[ultimo_rut]["ESTADO"] = estado_vigencia
+                            continue
+                            
+                        # 3. Captura línea principal (Nombre, Cargo, Sucursal)
+                        if '\t' in linea and "Persona" not in linea and "Gerencia" not in linea:
+                            partes = linea.split('\t')
+                            if len(partes) >= 3:
+                                nombre = partes[0].strip().upper()
+                                cargo = partes[1].strip().upper()
+                                sucursal_raw = partes[2].strip().lower()
+                                
+                                rut_puro = ultimo_rut
+                                if len(partes) > 3 and re.search(r"\d{7,8}-[\dkK]", str(partes[3])):
+                                    rut_puro = limpiar_rut(re.search(r"\d{7,8}-[\dkK]", str(partes[3]).group(0)))
+                                    ultimo_rut = rut_puro
+                                    
+                                if rut_puro and nombre:
+                                    # Traductor de sucursales a formato Maestro
+                                    if "ecom" in sucursal_raw or "electrocom" in sucursal_raw: sucursal = "ECOM VALDIVIA"
+                                    elif "mct" in sucursal_raw: sucursal = "MCT VALDIVIA"
+                                    elif "plc" in sucursal_raw or "placa" in sucursal_raw: sucursal = "PLC VALDIVIA"
+                                    else: sucursal = "ECOM VALDIVIA"
+                                    
+                                    trabajadores_procesados[rut_puro] = {
+                                        "RUT": rut_puro, "NOMBRE": nombre, "SUCURSAL": sucursal,
+                                        "CARGO": cargo, "ESTADO": "Activo" # Por defecto, si abajo dice "No" se cambiará a Finiquitado
+                                    }
+                    
+                    # 4. Filtro Inteligente: Separar Nuevos de Existentes
+                    nuevos = []
+                    actualizaciones = []
+                    
+                    for rut, datos in trabajadores_procesados.items():
+                        if rut in ruts_existentes:
+                            actualizaciones.append(datos) # Ya existe, solo lo actualizamos en silencio
+                        else:
+                            datos["SEXO"] = "Seleccionar"
+                            nuevos.append(datos)          # Es nuevo, le pediremos el Sexo
+                    
+                    st.session_state.talana_actualizaciones = actualizaciones
+                    
+                    # Si hay trabajadores NUEVOS, vamos a la mesa de validación
+                    if nuevos:
+                        st.session_state.talana_nuevos = nuevos
+                        st.session_state.talana_paso = 2
+                        st.rerun()
+                        
+                    # Si NO hay nuevos, pero SÍ copiamos gente que ya estaba, actualizamos todo en silencio
+                    elif actualizaciones:
+                        df_actualizaciones = pd.DataFrame(actualizaciones)
+                        df_final = fusionar_nominas(df_existente, df_actualizaciones)
+                        if actualizar_hoja_completa(df_final, "personal"):
+                            st.success(f"✅ ¡Todo en orden! No hay trabajadores nuevos. Se actualizaron en silencio los cargos, sucursales y vigencias de {len(actualizaciones)} trabajadores.")
+                            st.balloons()
+                            st.cache_data.clear()
+                            time.sleep(3)
+                            st.rerun()
+                        else:
+                            st.error("❌ Error al guardar en Google Sheets.")
+                    else:
+                        st.error("❌ No detecté datos válidos. Asegúrate de copiar las filas completas.")
+
+        # PASO 2: MESA DE VALIDACIÓN DE SEXO (SOLO PARA TRABAJADORES NUEVOS)
         elif st.session_state.talana_paso == 2:
             df_nuevos = pd.DataFrame(st.session_state.talana_nuevos)
-            st.success(f"✅ ¡He detectado {len(df_nuevos)} trabajadores desde Talana!")
-            st.warning("⚠️ Paso Final: Selecciona el sexo de cada trabajador en la tabla para habilitar el guardado.")
+            num_viejos = len(st.session_state.talana_actualizaciones)
+            
+            st.success(f"✅ ¡He detectado **{len(df_nuevos)} trabajadores NUEVOS**!")
+            if num_viejos > 0:
+                st.info(f"🔄 (Además, actualizaré los datos y el estado Vigente de los {num_viejos} trabajadores que ya estaban en el sistema).")
+                
+            st.warning("⚠️ Paso Final: Selecciona el Sexo solo de los trabajadores nuevos para guardar.")
             
             df_editado = st.data_editor(
                 df_nuevos,
@@ -203,7 +245,7 @@ def mostrar_modulo_personal(rol_usuario):
                     "NOMBRE": st.column_config.TextColumn(disabled=True),
                     "CARGO": st.column_config.TextColumn(disabled=True),
                     "SUCURSAL": st.column_config.TextColumn(disabled=True),
-                    "ESTADO": None # Oculto en la vista
+                    "ESTADO": None # Oculto en esta pantalla
                 },
                 hide_index=True, use_container_width=True
             )
@@ -219,13 +261,20 @@ def mostrar_modulo_personal(rol_usuario):
                 if faltan_sexo > 0:
                     st.button(f"Falta definir sexo en {faltan_sexo} trabajadores", disabled=True, use_container_width=True)
                 else:
-                    if st.button("💾 Confirmar Carga Definitiva", type="primary", use_container_width=True):
+                    if st.button("💾 Confirmar e Ingresar a Nómina Maestra", type="primary", use_container_width=True):
                         with st.spinner("Sincronizando nómina en la nube..."):
                             df_existente = obtener_datos_nube("personal")
+                            
+                            # 1. Aplicamos las actualizaciones silenciosas primero
+                            if st.session_state.talana_actualizaciones:
+                                df_act = pd.DataFrame(st.session_state.talana_actualizaciones)
+                                df_existente = fusionar_nominas(df_existente, df_act)
+                                
+                            # 2. Agregamos a los nuevos con su Sexo configurado
                             df_final = fusionar_nominas(df_existente, df_editado)
                             
                             if actualizar_hoja_completa(df_final, "personal"):
-                                st.success("🎉 ¡Nómina actualizada exitosamente!")
+                                st.success("🎉 ¡Base de Datos Maestra actualizada exitosamente!")
                                 st.session_state.talana_paso = 1
                                 st.cache_data.clear()
                                 time.sleep(2)
