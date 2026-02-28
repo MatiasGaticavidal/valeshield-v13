@@ -120,7 +120,7 @@ def mostrar_modulo_personal(rol_usuario):
                 else:
                     st.error("⚠️ Los campos RUT y Nombre son obligatorios.")
 
-   # --- PESTAÑA 3: IMPORTADOR MASIVO ---
+  # --- PESTAÑA 3: IMPORTADOR MASIVO ---
     with tab_masivo:
         import re
         import time
@@ -139,12 +139,15 @@ def mostrar_modulo_personal(rol_usuario):
             
             if st.button("🔍 Auditar Nómina", type="primary") and texto_pegado:
                 with st.spinner("Escaneando y comparando con la base de datos actual..."):
-                    # Obtenemos la base de datos actual para saber quiénes ya existen
+                    # 1. LECTURA BLINDADA DE LA BASE EXISTENTE
                     df_existente = obtener_datos_nube("personal")
-                    if not df_existente.empty and 'RUT' in df_existente.columns:
-                        ruts_existentes = [limpiar_rut(str(r)) for r in df_existente['RUT'].tolist()]
-                    else:
-                        ruts_existentes = []
+                    ruts_existentes = []
+                    if not df_existente.empty:
+                        # Forzamos que los títulos de tu Sheets se lean en mayúsculas sin espacios
+                        df_existente.columns = [str(c).strip().upper() for c in df_existente.columns]
+                        if 'RUT' in df_existente.columns:
+                            # Limpiamos los RUTs de la base para que la comparación sea perfecta
+                            ruts_existentes = [limpiar_rut(str(r)) for r in df_existente['RUT'].dropna().tolist()]
 
                     trabajadores_procesados = {}
                     lineas = texto_pegado.split('\n')
@@ -154,20 +157,20 @@ def mostrar_modulo_personal(rol_usuario):
                         linea = linea.strip()
                         if not linea: continue
                         
-                        # 1. Captura RUT huérfano (Línea superior de Talana)
+                        # A. Captura RUT huérfano (Línea superior)
                         es_rut = re.search(r"^(\d{7,8}-[\dkK])$", linea, re.IGNORECASE)
                         if es_rut:
                             ultimo_rut = limpiar_rut(es_rut.group(1))
                             continue
                             
-                        # 2. Captura estado Vigente (Línea inferior de Talana: "Si" / "No")
+                        # B. Captura estado Vigente (Línea inferior: "Si" / "No")
                         if linea.lower() in ["si", "sí", "no"]:
                             estado_vigencia = "Activo" if linea.lower() in ["si", "sí"] else "Finiquitado"
                             if ultimo_rut and ultimo_rut in trabajadores_procesados:
                                 trabajadores_procesados[ultimo_rut]["ESTADO"] = estado_vigencia
                             continue
                             
-                        # 3. Captura línea principal (Nombre, Cargo, Sucursal)
+                        # C. Captura línea principal (Nombre, Cargo, Sucursal)
                         if '\t' in linea and "Persona" not in linea and "Gerencia" not in linea:
                             partes = linea.split('\t')
                             if len(partes) >= 3:
@@ -176,9 +179,11 @@ def mostrar_modulo_personal(rol_usuario):
                                 sucursal_raw = partes[2].strip().lower()
                                 
                                 rut_puro = ultimo_rut
-                                if len(partes) > 3 and re.search(r"\d{7,8}-[\dkK]", str(partes[3])):
-                                    rut_puro = limpiar_rut(re.search(r"\d{7,8}-[\dkK]", str(partes[3]).group(0)))
-                                    ultimo_rut = rut_puro
+                                if len(partes) > 3:
+                                    rut_match = re.search(r"\d{7,8}-[\dkK]", str(partes[3]))
+                                    if rut_match:
+                                        rut_puro = limpiar_rut(rut_match.group(0))
+                                        ultimo_rut = rut_puro
                                     
                                 if rut_puro and nombre:
                                     # Traductor de sucursales a formato Maestro
@@ -189,7 +194,7 @@ def mostrar_modulo_personal(rol_usuario):
                                     
                                     trabajadores_procesados[rut_puro] = {
                                         "RUT": rut_puro, "NOMBRE": nombre, "SUCURSAL": sucursal,
-                                        "CARGO": cargo, "ESTADO": "Activo" # Por defecto, si abajo dice "No" se cambiará a Finiquitado
+                                        "CARGO": cargo, "ESTADO": "Activo" 
                                     }
                     
                     # 4. Filtro Inteligente: Separar Nuevos de Existentes
@@ -198,20 +203,20 @@ def mostrar_modulo_personal(rol_usuario):
                     
                     for rut, datos in trabajadores_procesados.items():
                         if rut in ruts_existentes:
-                            actualizaciones.append(datos) # Ya existe, solo lo actualizamos en silencio
+                            actualizaciones.append(datos) # Ya existe, lo mandamos a actualizar en silencio
                         else:
                             datos["SEXO"] = "Seleccionar"
-                            nuevos.append(datos)          # Es nuevo, le pediremos el Sexo
+                            nuevos.append(datos)          # Es nuevo, lo mandamos a la mesa de Sexo
                     
                     st.session_state.talana_actualizaciones = actualizaciones
                     
-                    # Si hay trabajadores NUEVOS, vamos a la mesa de validación
+                    # Si hay trabajadores NUEVOS
                     if nuevos:
                         st.session_state.talana_nuevos = nuevos
                         st.session_state.talana_paso = 2
                         st.rerun()
                         
-                    # Si NO hay nuevos, pero SÍ copiamos gente que ya estaba, actualizamos todo en silencio
+                    # Si NO hay nuevos, pero SÍ copiamos gente que ya estaba
                     elif actualizaciones:
                         df_actualizaciones = pd.DataFrame(actualizaciones)
                         df_final = fusionar_nominas(df_existente, df_actualizaciones)
@@ -245,7 +250,7 @@ def mostrar_modulo_personal(rol_usuario):
                     "NOMBRE": st.column_config.TextColumn(disabled=True),
                     "CARGO": st.column_config.TextColumn(disabled=True),
                     "SUCURSAL": st.column_config.TextColumn(disabled=True),
-                    "ESTADO": None # Oculto en esta pantalla
+                    "ESTADO": None 
                 },
                 hide_index=True, use_container_width=True
             )
@@ -264,13 +269,12 @@ def mostrar_modulo_personal(rol_usuario):
                     if st.button("💾 Confirmar e Ingresar a Nómina Maestra", type="primary", use_container_width=True):
                         with st.spinner("Sincronizando nómina en la nube..."):
                             df_existente = obtener_datos_nube("personal")
+                            df_existente.columns = [str(c).strip().upper() for c in df_existente.columns]
                             
-                            # 1. Aplicamos las actualizaciones silenciosas primero
                             if st.session_state.talana_actualizaciones:
                                 df_act = pd.DataFrame(st.session_state.talana_actualizaciones)
                                 df_existente = fusionar_nominas(df_existente, df_act)
                                 
-                            # 2. Agregamos a los nuevos con su Sexo configurado
                             df_final = fusionar_nominas(df_existente, df_editado)
                             
                             if actualizar_hoja_completa(df_final, "personal"):
