@@ -129,51 +129,89 @@ def mostrar_modulo_personal(rol_usuario):
         st.markdown("### 📥 Puente Talana (Carga Directa Inteligente)")
         st.info("💡 Ve a Talana, selecciona las filas de los trabajadores, cópialas (Ctrl+C) y pégalas aquí (Ctrl+V).")
 
-        # Controladores de paso en la memoria
         if 'talana_paso' not in st.session_state:
             st.session_state.talana_paso = 1
             st.session_state.talana_nuevos = []
 
-        # PASO 1: ZONA DE PEGADO
         if st.session_state.talana_paso == 1:
-            texto_pegado = st.text_area("Pega los datos copiados de Talana aquí:", height=150, placeholder="Ej: 9947182-4   Raiman Borquez...   Vendedor   Ecom. Valdivia")
+            texto_pegado = st.text_area("Pega los datos copiados de Talana aquí:", height=150, placeholder="Ej: Alvarado Godoy, Luis AlbertoOperario BodegaMct Valdivia9803758-6Si")
             
             if st.button("🔍 Escanear y Detectar", type="primary") and texto_pegado:
                 nuevos_trabajadores = []
-                # Escáner inteligente línea por línea
+                
                 for linea in texto_pegado.split('\n'):
-                    partes = linea.split('\t') # Talana separa por tabulaciones al copiar
-                    if len(partes) >= 4:
-                        # Busca el RUT en la línea para anclarse
+                    linea = linea.strip()
+                    if not linea: continue
+                    
+                    rut_puro = ""
+                    nombre = ""
+                    cargo = "POR DEFINIR"
+                    sucursal_raw = ""
+                    
+                    # 1. Si pegó con tabulaciones (desde un Excel)
+                    if '\t' in linea:
+                        partes = linea.split('\t')
                         rut_detectado = [p for p in partes if re.search(r"\d{7,8}-[\dkK]", str(p))]
                         if rut_detectado:
+                            rut_puro = rut_detectado[0].strip().upper()
+                            idx_rut = partes.index(rut_puro)
                             try:
-                                rut_puro = rut_detectado[0].strip()
-                                idx_rut = partes.index(rut_puro)
-                                
-                                # Captura basada en el orden de Talana: Rut, Persona, Cargo, Gerencia
                                 nombre = partes[idx_rut + 1].strip().upper()
                                 cargo = partes[idx_rut + 2].strip().upper()
                                 sucursal_raw = partes[idx_rut + 3].strip().lower()
-                                
-                                # Traductor automático a tus sucursales oficiales
-                                if "ecom" in sucursal_raw or "electrocom" in sucursal_raw: sucursal = "ECOM VALDIVIA"
-                                elif "mct" in sucursal_raw: sucursal = "MCT VALDIVIA"
-                                elif "plc" in sucursal_raw or "placa" in sucursal_raw: sucursal = "PLC VALDIVIA"
-                                else: sucursal = sucursal_raw.upper()
-                                
-                                nuevos_trabajadores.append({
-                                    "RUT": rut_puro, "NOMBRE": nombre, "SUCURSAL": sucursal,
-                                    "CARGO": cargo, "SEXO": "Seleccionar", "ESTADO": "Activo"
-                                })
                             except: pass
+                            
+                    # 2. Si pegó directo de la web y se pegó todo junto (Ej: NombreCargoSucursalRUT)
+                    else:
+                        match = re.search(r"(.*?)(Ecom\. Valdivia|Mct Valdivia|Plc\. Valdivia|Electrocom)(.*?)(\d{7,8}-[\dkK])", linea, re.IGNORECASE)
+                        if match:
+                            texto_previo = match.group(1)
+                            sucursal_raw = match.group(2).lower()
+                            rut_puro = match.group(4).upper()
+                            
+                            # Diccionario de cargos comunes para separar el nombre del cargo
+                            cargos_conocidos = ["Jefe", "Operario", "Operador", "Vendedor", "Asistente", "Chofer", "Control", "Cajera", "Coordinador", "Agente", "Administrativa", "Promotor", "Auxiliar"]
+                            cargo_encontrado = False
+                            
+                            for c in cargos_conocidos:
+                                idx = texto_previo.find(c)
+                                if idx > 0: # Encontró el cargo y no es la primera letra (es decir, hay nombre antes)
+                                    nombre = texto_previo[:idx].strip().upper()
+                                    cargo = texto_previo[idx:].strip().upper()
+                                    cargo_encontrado = True
+                                    break
+                            
+                            # Si no es un cargo común, buscamos dónde empieza la mayúscula del cargo
+                            if not cargo_encontrado:
+                                separador = re.search(r"([a-záéíóúñ])([A-Z])", texto_previo)
+                                if separador:
+                                    idx = separador.start() + 1
+                                    nombre = texto_previo[:idx].strip().upper()
+                                    cargo = texto_previo[idx:].strip().upper()
+                                else:
+                                    nombre = texto_previo.upper()
+                    
+                    # Si logramos extraer el RUT y Nombre, lo preparamos
+                    if rut_puro and nombre:
+                        # Traductor automático de sucursales oficiales
+                        if "ecom" in sucursal_raw or "electrocom" in sucursal_raw: sucursal = "ECOM VALDIVIA"
+                        elif "mct" in sucursal_raw: sucursal = "MCT VALDIVIA"
+                        elif "plc" in sucursal_raw or "placa" in sucursal_raw: sucursal = "PLC VALDIVIA"
+                        else: sucursal = "ECOM VALDIVIA"
+                        
+                        # Evitamos duplicados en la misma lectura
+                        if not any(t['RUT'] == rut_puro for t in nuevos_trabajadores):
+                            nuevos_trabajadores.append({
+                                "RUT": rut_puro, "NOMBRE": nombre, "SUCURSAL": sucursal,
+                                "CARGO": cargo, "SEXO": "Seleccionar", "ESTADO": "Activo"
+                            })
                 
                 if nuevos_trabajadores:
                     st.session_state.talana_nuevos = nuevos_trabajadores
                     st.session_state.talana_paso = 2
                     st.rerun()
                 else:
-                    st.error("❌ No detecté ningún RUT válido. Asegúrate de copiar bien la tabla desde Talana.")
+                    st.error("❌ No detecté datos. Asegúrate de copiar las filas completas de Talana (deben incluir Sucursal y RUT).")
 
         # PASO 2: MESA DE VALIDACIÓN DE SEXO
         elif st.session_state.talana_paso == 2:
@@ -181,7 +219,6 @@ def mostrar_modulo_personal(rol_usuario):
             st.success(f"✅ ¡He detectado {len(df_nuevos)} trabajadores desde Talana!")
             st.warning("⚠️ Paso Final: Selecciona el sexo de cada trabajador en la tabla para habilitar el guardado.")
             
-            # Editor interactivo con lista desplegable para Sexo
             df_editado = st.data_editor(
                 df_nuevos,
                 column_config={
@@ -190,12 +227,11 @@ def mostrar_modulo_personal(rol_usuario):
                     "NOMBRE": st.column_config.TextColumn(disabled=True),
                     "CARGO": st.column_config.TextColumn(disabled=True),
                     "SUCURSAL": st.column_config.TextColumn(disabled=True),
-                    "ESTADO": None # Lo ocultamos para que sea una carga limpia
+                    "ESTADO": None
                 },
                 hide_index=True, use_container_width=True
             )
             
-            # Verificamos si faltan sexos por seleccionar
             faltan_sexo = len(df_editado[df_editado['SEXO'] == "Seleccionar"])
             
             col1, col2 = st.columns(2)
@@ -213,7 +249,7 @@ def mostrar_modulo_personal(rol_usuario):
                             df_final = fusionar_nominas(df_existente, df_editado)
                             
                             if actualizar_hoja_completa(df_final, "personal"):
-                                st.success("🎉 ¡Nómina actualizada exitosamente para estadísticas!")
+                                st.success("🎉 ¡Nómina actualizada exitosamente!")
                                 st.session_state.talana_paso = 1
                                 st.cache_data.clear()
                                 time.sleep(2)
