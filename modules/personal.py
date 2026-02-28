@@ -129,11 +129,10 @@ def mostrar_modulo_personal(rol_usuario):
         st.markdown("### 📥 Puente Talana (Auditor Inteligente)")
         st.info("💡 Pega a todos los trabajadores (Ctrl+V). El sistema actualizará a los antiguos automáticamente y solo te pedirá datos de los nuevos.")
 
-        if 'talana_paso' not in st.session_state:
-            st.session_state.talana_paso = 1
-            st.session_state.talana_nuevos = []
-            st.session_state.talana_actualizaciones = []
-
+       # Controladores de paso en la memoria blindados
+        if 'talana_paso' not in st.session_state: st.session_state.talana_paso = 1
+        if 'talana_nuevos' not in st.session_state: st.session_state.talana_nuevos = []
+        if 'talana_actualizaciones' not in st.session_state: st.session_state.talana_actualizaciones = []
         if st.session_state.talana_paso == 1:
             texto_pegado = st.text_area("Pega los datos copiados de Talana aquí:", height=150, placeholder="Ej: \n14280603-7\nAguero Morales, Daniella... \t Jefe \t Plc. Valdivia\nSi")
             
@@ -286,3 +285,4 @@ def mostrar_modulo_personal(rol_usuario):
                             else:
                                 st.error("❌ Error al guardar en Google Sheets.")
         # --- FIN DEL PUENTE TALANA ---
+
