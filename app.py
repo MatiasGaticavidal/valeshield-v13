@@ -1,5 +1,6 @@
 import streamlit as st
-import streamlit_antd_components as sac 
+import streamlit_antd_components as sac
+import requests
 import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
@@ -149,7 +150,8 @@ if 'logueado' not in st.session_state: st.session_state['logueado'] = False
 if 'opcion_actual' not in st.session_state: st.session_state['opcion_actual'] = "Inicio"
 
 # ==========================================
-# 🚪 4. LOGIN (ESTÉTICA MINIMALISTA)
+# ==========================================
+# 🚪 4. LOGIN (CONECTADO AL MOTOR FASTAPI)
 # ==========================================
 if not st.session_state['logueado']:
     col1, col2, col3 = st.columns([1, 1.2, 1])
@@ -163,23 +165,38 @@ if not st.session_state['logueado']:
         """, unsafe_allow_html=True)
         
         with st.container(border=True):
-            rut_in = st.text_input("Usuario (RUT)", placeholder="Ej: 12345678-9")
+            # AJUSTE: Pedimos el correo para conectar con la nueva bóveda
+            correo_in = st.text_input("Correo Electrónico", placeholder="Ej: MGATICA@MCT.CL")
             pass_in = st.text_input("Contraseña", type="password")
             
             if st.button("Iniciar Sesión", type="primary", use_container_width=True):
-                df_u = cargar_usuarios()
-                user = df_u[(df_u['RUT'] == limpiar_rut(rut_in)) & (df_u['Clave'] == pass_in)]
-                if not user.empty:
-                    st.session_state.update({
-                        'logueado': True, 
-                        'usuario_nombre': user.iloc[0]['Nombre'], 
-                        'usuario_rol': user.iloc[0]['Rol'], 
-                        'usuario_rut': user.iloc[0]['RUT']
-                    })
-                    st.rerun()
-                else:
-                    st.error("❌ Acceso denegado.")
+                # EL NUEVO CABLE: Llamamos por teléfono a tu motor FastAPI
+                try:
+                    respuesta = requests.post(
+                        "http://localhost:8000/login/",
+                        json={"correo": correo_in, "password": pass_in}
+                    )
+                    
+                    if respuesta.status_code == 200:
+                        datos = respuesta.json()
+                        # Limpiamos el mensaje para extraer solo tu nombre
+                        nombre_limpio = datos["mensaje"].replace("¡Bienvenido ", "").replace("!", "")
+                        
+                        # Guardamos las variables EXACTAS que usa el resto de tu app original
+                        st.session_state.update({
+                            'logueado': True, 
+                            'usuario_nombre': nombre_limpio, 
+                            'usuario_rol': datos["rol"], 
+                            'empresa_id': datos["empresa_id"],
+                            'usuario_rut': correo_in # Usamos el correo aquí para no romper tu menú lateral
+                        })
+                        st.rerun()
+                    else:
+                        st.error("❌ Correo o contraseña incorrectos.")
+                except requests.exceptions.ConnectionError:
+                    st.error("🔌 Error crítico: El motor de seguridad (FastAPI) está apagado.")
         
+        # El botón SOS se mantiene intacto
         if st.button("🆘 Reportar Problema de Acceso", use_container_width=True):
             st.session_state['sos_pre'] = True
             
@@ -187,6 +204,7 @@ if not st.session_state['logueado']:
         with st.form("sos_login"):
             det = st.text_area("Describa el problema:")
             if st.form_submit_button("Enviar"):
+                # Por ahora mantenemos el CSV para esto, luego lo pasaremos a la base de datos
                 pd.DataFrame([{"Fecha": datetime.now(), "Usuario": "INVITADO", "Detalle": det}]).to_csv(ARCHIVO_SOPORTE, mode='a', header=not os.path.exists(ARCHIVO_SOPORTE), index=False)
                 st.success("Enviado."); st.session_state['sos_pre'] = False
     st.stop()
@@ -278,6 +296,7 @@ elif opcion == "ShieldSign (Firmas)": mostrar_modulo_firmador(df_personal)
 elif opcion == "Cambiar Clave": mostrar_cambio_clave(st.session_state['usuario_rut'])
 elif opcion == "Solicitar Ayuda": mostrar_modulo_soporte(st.session_state['usuario_nombre'], st.session_state['usuario_rol'])
 elif opcion == "Gestión Usuarios": mostrar_modulo_usuarios()
+
 
 
 
